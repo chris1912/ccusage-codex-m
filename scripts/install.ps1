@@ -9,7 +9,11 @@ function Resolve-CodexHome {
   param([string]$Value)
 
   if (-not [string]::IsNullOrWhiteSpace($Value)) {
-    return (Resolve-Path -LiteralPath $Value -ErrorAction SilentlyContinue)?.Path ?? $Value
+    try {
+      return (Resolve-Path -LiteralPath $Value -ErrorAction Stop).Path
+    } catch {
+      return $Value
+    }
   }
 
   $default = Join-Path $env:USERPROFILE ".codex"
@@ -116,4 +120,3 @@ Write-Host ""
 Write-Host "Next:"
 Write-Host "  1) Restart PowerShell, or run: . `$PROFILE"
 Write-Host "  2) Try: ccusage-codex-m"
-

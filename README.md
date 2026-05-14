@@ -1,4 +1,4 @@
-# ccusage-codex-m
+﻿# ccusage-codex-m
 
 一个用于统计 Codex 本地会话用量与费用的脚本与命令集合。  
 A local script + shell command snippets for tracking Codex token usage and estimated cost.
@@ -33,6 +33,12 @@ ccusage-codex-open
 说明：
 - 安装脚本会把 `ccusage_m_view.js` 复制到你的 `CODEX_HOME`（默认 `C:\Users\<你>\.codex`），并修改 `$PROFILE` 写入函数定义。
 - 脚本会自动对被修改的文件做 `*.bak-YYYYMMDD_HHMMSS` 备份。
+
+如果你的环境里 `powershell` 命令不可用，可以改用 `powershell.exe`：
+
+```powershell
+powershell.exe -ExecutionPolicy Bypass -File .\scripts\install.ps1
+```
 
 ### Git Bash / WSL (bash/zsh)
 
@@ -176,3 +182,4 @@ Both installers:
 ### Pricing note
 
 Cost is computed using an internal price table. Prices can change; keep your table updated if you rely on cost accuracy.
+
