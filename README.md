@@ -3,6 +3,54 @@
 一个用于统计 Codex 本地会话用量与费用的脚本与命令集合。  
 A local script + shell command snippets for tracking Codex token usage and estimated cost.
 
+## 一句话交给 AI 部署 (复制粘贴即可)
+
+中文：
+> 请在 Windows 上帮我部署并配置这个仓库 `https://github.com/chris1912/ccusage-codex-m`：克隆到本地后在仓库根目录运行 `scripts/install.ps1`，让 PowerShell 里可直接使用 `ccusage-codex-m`、`ccusage-codex-monthly`、`ccusage-codex-open` 三个命令；如果已存在旧配置，请先备份再写入。
+
+English:
+> On Windows, deploy `https://github.com/chris1912/ccusage-codex-m`: clone it, run `scripts/install.ps1` from the repo root, and make sure PowerShell exposes `ccusage-codex-m`, `ccusage-codex-monthly`, `ccusage-codex-open`. Back up any existing config before editing.
+
+## 30 秒快速安装
+
+### Windows (PowerShell)
+
+```powershell
+git clone https://github.com/chris1912/ccusage-codex-m.git
+cd ccusage-codex-m
+
+# 如需自定义 Codex 数据目录：
+# .\scripts\install.ps1 -CodexHome "D:\path\to\.codex"
+
+powershell -ExecutionPolicy Bypass -File .\scripts\install.ps1
+. $PROFILE
+
+ccusage-codex-m
+ccusage-codex-monthly
+ccusage-codex-open
+```
+
+说明：
+- 安装脚本会把 `ccusage_m_view.js` 复制到你的 `CODEX_HOME`（默认 `C:\Users\<你>\.codex`），并修改 `$PROFILE` 写入函数定义。
+- 脚本会自动对被修改的文件做 `*.bak-YYYYMMDD_HHMMSS` 备份。
+
+### Git Bash / WSL (bash/zsh)
+
+```bash
+git clone https://github.com/chris1912/ccusage-codex-m.git
+cd ccusage-codex-m
+
+# 如需自定义 Codex 数据目录：
+# CODEX_HOME="/c/Users/<you>/.codex" bash scripts/install.sh
+
+bash scripts/install.sh
+source ~/.bashrc  # 或 ~/.zshrc
+
+ccusage-codex-m
+ccusage-codex-monthly
+ccusage-codex-open
+```
+
 ## 中文说明
 
 ### 这是什么
@@ -116,7 +164,15 @@ They define:
 - `ccusage-codex-monthly`
 - `ccusage-codex-open` (sessions under `~/.codex/sessions`)
 
+### Quick install scripts
+
+- Windows PowerShell: `scripts/install.ps1`
+- bash/zsh (Git Bash/WSL): `scripts/install.sh`
+
+Both installers:
+- Copy `ccusage_m_view.js` into your `CODEX_HOME` (default: `~/.codex`)
+- Append a marked block to your shell profile, with timestamped backups
+
 ### Pricing note
 
 Cost is computed using an internal price table. Prices can change; keep your table updated if you rely on cost accuracy.
-
