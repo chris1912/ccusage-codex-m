@@ -17,6 +17,11 @@ const MODES = new Set(['daily', 'monthly', 'sessions']);
 // Long-context uplift is applied only per event when that event's input exceeds 272K.
 // reasoningOutputTokens are displayed but not billed separately because pricing is input/cached-input/output based.
 const PRICING_PER_M = {
+  // Codex pricing update (2026-07-10): GPT-5.6 preview pricing from OpenAI.
+  // The cache field represents cached-input reads; GPT-5.6 charges 10% of input.
+  'gpt-5.6-sol': { input: 5.0, cache: 0.5, output: 30.0 },
+  'gpt-5.6-terra': { input: 2.5, cache: 0.25, output: 15.0 },
+  'gpt-5.6-luna': { input: 1.0, cache: 0.1, output: 6.0 },
   'gpt-5.5': { input: 5.0, cache: 0.5, output: 30.0, inputAbove: 10.0, cacheAbove: 1.0, outputAbove: 45.0 },
   // Pro models do not advertise a cached-input discount; bill cached input at the standard input rate.
   'gpt-5.5-pro': { input: 30.0, cache: 30.0, output: 180.0, inputAbove: 60.0, cacheAbove: 60.0, outputAbove: 270.0 },
