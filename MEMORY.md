@@ -11,11 +11,11 @@ The active pricing table is `ccusage_m_view.js` in `PRICING_PER_M`, expressed in
 
 On 2026-07-10, the GPT-5.6 preview family was added from OpenAI's June 26, 2026 announcement (https://openai.com/index/previewing-gpt-5-6-sol/):
 
-- `gpt-5.6-sol`: input 5.0, cached-input read 0.5, output 30.0
-- `gpt-5.6-terra`: input 2.5, cached-input read 0.25, output 15.0
-- `gpt-5.6-luna`: input 1.0, cached-input read 0.1, output 6.0
+- `gpt-5.6-sol`: input 5.0, cached-input read 0.5, cache write 6.25, output 30.0; long-context input 10.0, cached-input read 1.0, cache write 12.5, output 45.0
+- `gpt-5.6-terra`: input 2.5, cached-input read 0.25, cache write 3.125, output 15.0; long-context input 5.0, cached-input read 0.5, cache write 6.25, output 22.5
+- `gpt-5.6-luna`: input 1.0, cached-input read 0.1, cache write 1.25, output 6.0; long-context input 2.0, cached-input read 0.2, cache write 2.5, output 9.0
 
-The script currently receives cached-input token counts and prices them as cache reads. GPT-5.6 cache writes are billed separately by OpenAI at 1.25x uncached input, but this usage reconstruction does not expose cache-write counts.
+Codex 2026-07-10: the script supports `cacheWriteInputTokens` and prices GPT-5.6 cache writes separately when the log source exposes `cache_write_input_tokens`, `cache_creation_input_tokens`, or `cache_write_tokens`. Current Codex local `token_count` logs do not expose cache-write token counts, so runtime output usually shows `Write` as `0.000M`.
 
 ## Verification
 

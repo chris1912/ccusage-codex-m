@@ -79,8 +79,8 @@ ccusage-codex-open
   - 默认全量（除非你传入 `--since/--until`）
 
 输出表头（保持一致）：
-- 日/月：`Data | Models | Input | Cache | Output | Reason | Total | Cost`
-- session：`Started | Session | Models | Input | Cache | Output | Reason | Total | Cost`
+- 日/月：`Data | Models | Input | Cache | Write | Output | Reason | Total | Cost`
+- session：`Started | Session | Models | Input | Cache | Write | Output | Reason | Total | Cost`
 
 ### 依赖
 
@@ -125,6 +125,7 @@ node ccusage_m_view.js sessions
 ### 计费说明
 
 脚本会根据内置的模型价格表计算 Cost。  
+`Cache` 表示缓存读取 token，`Write` 表示缓存写入 token；如果 Codex 本地日志未暴露缓存写入字段，`Write` 会显示为 `0.000M`。
 注意：价格表可能会随时间变化，建议你定期更新价格数据或在脚本里维护你自己的价格表。
 
 ## English
@@ -182,4 +183,5 @@ Both installers:
 ### Pricing note
 
 Cost is computed using an internal price table. Prices can change; keep your table updated if you rely on cost accuracy.
+`Cache` means cached-input reads, and `Write` means cache writes. If local Codex logs do not expose cache-write fields, `Write` is shown as `0.000M`.
 

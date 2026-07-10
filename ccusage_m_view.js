@@ -15,13 +15,13 @@ const MODES = new Set(['daily', 'monthly', 'sessions']);
 // USD per 1M tokens.
 // Standard rates are aligned to OpenAI's public pricing pages.
 // Long-context uplift is applied only per event when that event's input exceeds 272K.
-// reasoningOutputTokens are displayed but not billed separately because pricing is input/cached-input/output based.
+// reasoningOutputTokens are displayed but not billed separately because pricing is input/cache/output based.
 const PRICING_PER_M = {
   // Codex pricing update (2026-07-10): GPT-5.6 preview pricing from OpenAI.
-  // The cache field represents cached-input reads; GPT-5.6 charges 10% of input.
-  'gpt-5.6-sol': { input: 5.0, cache: 0.5, output: 30.0 },
-  'gpt-5.6-terra': { input: 2.5, cache: 0.25, output: 15.0 },
-  'gpt-5.6-luna': { input: 1.0, cache: 0.1, output: 6.0 },
+  // Codex 2026-07-10: cache is cached-input reads; cacheWrite is cache writes.
+  'gpt-5.6-sol': { input: 5.0, cache: 0.5, cacheWrite: 6.25, output: 30.0, inputAbove: 10.0, cacheAbove: 1.0, cacheWriteAbove: 12.5, outputAbove: 45.0 },
+  'gpt-5.6-terra': { input: 2.5, cache: 0.25, cacheWrite: 3.125, output: 15.0, inputAbove: 5.0, cacheAbove: 0.5, cacheWriteAbove: 6.25, outputAbove: 22.5 },
+  'gpt-5.6-luna': { input: 1.0, cache: 0.1, cacheWrite: 1.25, output: 6.0, inputAbove: 2.0, cacheAbove: 0.2, cacheWriteAbove: 2.5, outputAbove: 9.0 },
   'gpt-5.5': { input: 5.0, cache: 0.5, output: 30.0, inputAbove: 10.0, cacheAbove: 1.0, outputAbove: 45.0 },
   // Pro models do not advertise a cached-input discount; bill cached input at the standard input rate.
   'gpt-5.5-pro': { input: 30.0, cache: 30.0, output: 180.0, inputAbove: 60.0, cacheAbove: 60.0, outputAbove: 270.0 },
@@ -88,12 +88,14 @@ function normalizeRawUsage(value) {
   if (value == null || typeof value !== 'object') return null;
   const input = ensureNumber(value.input_tokens);
   const cached = ensureNumber(value.cached_input_tokens ?? value.cache_read_input_tokens);
+  const cacheWrite = ensureNumber(value.cache_write_input_tokens ?? value.cache_creation_input_tokens ?? value.cache_write_tokens);
   const output = ensureNumber(value.output_tokens);
   const reasoning = ensureNumber(value.reasoning_output_tokens);
   const total = ensureNumber(value.total_tokens);
   return {
     input_tokens: input,
     cached_input_tokens: cached,
+    cache_write_input_tokens: cacheWrite,
     output_tokens: output,
     reasoning_output_tokens: reasoning,
     total_tokens: total > 0 ? total : input + output,
@@ -104,6 +106,7 @@ function subtractRawUsage(current, previous) {
   return {
     input_tokens: Math.max(current.input_tokens - (previous?.input_tokens ?? 0), 0),
     cached_input_tokens: Math.max(current.cached_input_tokens - (previous?.cached_input_tokens ?? 0), 0),
+    cache_write_input_tokens: Math.max(current.cache_write_input_tokens - (previous?.cache_write_input_tokens ?? 0), 0),
     output_tokens: Math.max(current.output_tokens - (previous?.output_tokens ?? 0), 0),
     reasoning_output_tokens: Math.max(current.reasoning_output_tokens - (previous?.reasoning_output_tokens ?? 0), 0),
     total_tokens: Math.max(current.total_tokens - (previous?.total_tokens ?? 0), 0),
@@ -113,9 +116,11 @@ function subtractRawUsage(current, previous) {
 function convertToDelta(raw) {
   const total = raw.total_tokens > 0 ? raw.total_tokens : raw.input_tokens + raw.output_tokens;
   const cached = Math.min(raw.cached_input_tokens, raw.input_tokens);
+  const cacheWrite = Math.min(raw.cache_write_input_tokens, Math.max(raw.input_tokens - cached, 0));
   return {
     inputTokens: raw.input_tokens,
     cachedInputTokens: cached,
+    cacheWriteInputTokens: cacheWrite,
     outputTokens: raw.output_tokens,
     reasoningOutputTokens: raw.reasoning_output_tokens,
     totalTokens: total,
@@ -301,6 +306,7 @@ function createEmptyUsage() {
   return {
     inputTokens: 0,
     cachedInputTokens: 0,
+    cacheWriteInputTokens: 0,
     outputTokens: 0,
     reasoningOutputTokens: 0,
     totalTokens: 0,
@@ -310,6 +316,7 @@ function createEmptyUsage() {
 function addUsage(target, delta) {
   target.inputTokens += delta.inputTokens;
   target.cachedInputTokens += delta.cachedInputTokens;
+  target.cacheWriteInputTokens += delta.cacheWriteInputTokens;
   target.outputTokens += delta.outputTokens;
   target.reasoningOutputTokens += delta.reasoningOutputTokens;
   target.totalTokens += delta.totalTokens;
@@ -319,14 +326,17 @@ function createEventCost(usage, pricing) {
   if (pricing == null) return 0;
   const inputTokens = Number(usage.inputTokens || 0);
   const cachedInputTokens = Math.min(Number(usage.cachedInputTokens || 0), inputTokens);
-  const nonCachedInputTokens = Math.max(0, inputTokens - cachedInputTokens);
+  const cacheWriteInputTokens = Math.min(Number(usage.cacheWriteInputTokens || 0), Math.max(inputTokens - cachedInputTokens, 0));
+  const nonCachedInputTokens = Math.max(0, inputTokens - cachedInputTokens - cacheWriteInputTokens);
   const outputTokens = Number(usage.outputTokens || 0);
   const useLongContextRates = inputTokens > LONG_CONTEXT_THRESHOLD;
   const inputRate = useLongContextRates ? (pricing.inputAbove ?? pricing.input ?? 0) : (pricing.input ?? 0);
   const cacheRate = useLongContextRates ? (pricing.cacheAbove ?? pricing.cache ?? 0) : (pricing.cache ?? 0);
+  const cacheWriteRate = useLongContextRates ? (pricing.cacheWriteAbove ?? pricing.cacheWrite ?? 0) : (pricing.cacheWrite ?? 0);
   const outputRate = useLongContextRates ? (pricing.outputAbove ?? pricing.output ?? 0) : (pricing.output ?? 0);
   return nonCachedInputTokens / MILLION * inputRate
     + cachedInputTokens / MILLION * cacheRate
+    + cacheWriteInputTokens / MILLION * cacheWriteRate
     + outputTokens / MILLION * outputRate;
 }
 
@@ -404,11 +414,12 @@ function loadTokenUsageEvents(sessionDirs) {
           if (previousTotals != null &&
             totalUsage.input_tokens === previousTotals.input_tokens &&
             totalUsage.cached_input_tokens === previousTotals.cached_input_tokens &&
+            totalUsage.cache_write_input_tokens === previousTotals.cache_write_input_tokens &&
             totalUsage.output_tokens === previousTotals.output_tokens &&
             totalUsage.reasoning_output_tokens === previousTotals.reasoning_output_tokens &&
             totalUsage.total_tokens === previousTotals.total_tokens &&
             lastUsage != null &&
-            (lastUsage.input_tokens > 0 || lastUsage.cached_input_tokens > 0 || lastUsage.output_tokens > 0 || lastUsage.reasoning_output_tokens > 0 || lastUsage.total_tokens > 0)) {
+            (lastUsage.input_tokens > 0 || lastUsage.cached_input_tokens > 0 || lastUsage.cache_write_input_tokens > 0 || lastUsage.output_tokens > 0 || lastUsage.reasoning_output_tokens > 0 || lastUsage.total_tokens > 0)) {
             stats.duplicateSuppressed += 1;
           }
           raw = subtractRawUsage(totalUsage, previousTotals);
@@ -419,7 +430,7 @@ function loadTokenUsageEvents(sessionDirs) {
 
         if (raw == null) continue;
         const delta = convertToDelta(raw);
-        if (delta.inputTokens === 0 && delta.cachedInputTokens === 0 && delta.outputTokens === 0 && delta.reasoningOutputTokens === 0) continue;
+        if (delta.inputTokens === 0 && delta.cachedInputTokens === 0 && delta.cacheWriteInputTokens === 0 && delta.outputTokens === 0 && delta.reasoningOutputTokens === 0) continue;
 
         const extractedModel = extractModel({ ...(record.payload || {}), info });
         let isFallbackModel = false;
@@ -444,6 +455,7 @@ function loadTokenUsageEvents(sessionDirs) {
           model,
           inputTokens: delta.inputTokens,
           cachedInputTokens: delta.cachedInputTokens,
+          cacheWriteInputTokens: delta.cacheWriteInputTokens,
           outputTokens: delta.outputTokens,
           reasoningOutputTokens: delta.reasoningOutputTokens,
           totalTokens: delta.totalTokens,
@@ -464,6 +476,7 @@ function createSummaryForMode(key, event) {
     firstTimestamp: event.timestamp,
     inputTokens: 0,
     cachedInputTokens: 0,
+    cacheWriteInputTokens: 0,
     outputTokens: 0,
     reasoningOutputTokens: 0,
     totalTokens: 0,
@@ -536,6 +549,7 @@ function buildGroupedReport(events, options) {
           month: formatDisplayMonth(summary.key, options.locale),
           inputTokens: summary.inputTokens,
           cachedInputTokens: summary.cachedInputTokens,
+          cacheWriteInputTokens: summary.cacheWriteInputTokens,
           outputTokens: summary.outputTokens,
           reasoningOutputTokens: summary.reasoningOutputTokens,
           totalTokens: summary.totalTokens,
@@ -556,6 +570,7 @@ function buildGroupedReport(events, options) {
           started: formatDisplayDateTime(summary.firstTimestamp, options.locale, options.timezone),
           inputTokens: summary.inputTokens,
           cachedInputTokens: summary.cachedInputTokens,
+          cacheWriteInputTokens: summary.cacheWriteInputTokens,
           outputTokens: summary.outputTokens,
           reasoningOutputTokens: summary.reasoningOutputTokens,
           totalTokens: summary.totalTokens,
@@ -569,6 +584,7 @@ function buildGroupedReport(events, options) {
         date: formatDisplayDate(summary.key, options.locale),
         inputTokens: summary.inputTokens,
         cachedInputTokens: summary.cachedInputTokens,
+        cacheWriteInputTokens: summary.cacheWriteInputTokens,
         outputTokens: summary.outputTokens,
         reasoningOutputTokens: summary.reasoningOutputTokens,
         totalTokens: summary.totalTokens,
@@ -580,6 +596,7 @@ function buildGroupedReport(events, options) {
   const totals = rows.reduce((acc, row) => {
     acc.inputTokens += row.inputTokens;
     acc.cachedInputTokens += row.cachedInputTokens;
+    acc.cacheWriteInputTokens += row.cacheWriteInputTokens;
     acc.outputTokens += row.outputTokens;
     acc.reasoningOutputTokens += row.reasoningOutputTokens;
     acc.totalTokens += row.totalTokens;
@@ -588,6 +605,7 @@ function buildGroupedReport(events, options) {
   }, {
     inputTokens: 0,
     cachedInputTokens: 0,
+    cacheWriteInputTokens: 0,
     outputTokens: 0,
     reasoningOutputTokens: 0,
     totalTokens: 0,
@@ -655,19 +673,20 @@ function renderTable(headers, rows, caps) {
 
 function renderUsageTable(mode, rows, totals) {
   if (mode === 'sessions') {
-    const headers = ['Started', 'Session', 'Models', 'Input', 'Cache', 'Output', 'Reason', 'Total', 'Cost'];
+    const headers = ['Started', 'Session', 'Models', 'Input', 'Cache', 'Write', 'Output', 'Reason', 'Total', 'Cost'];
     const printableRows = rows.map((row) => ({
       Started: row.started,
       Session: row.sessionId,
       Models: Object.keys(row.models || {}).map(normalizeModelName).sort().join('\n'),
       Input: m(row.inputTokens || 0),
       Cache: m(row.cachedInputTokens || 0),
+      Write: m(row.cacheWriteInputTokens || 0),
       Output: m(row.outputTokens || 0),
       Reason: m(row.reasoningOutputTokens || 0),
       Total: m(row.totalTokens || 0),
       Cost: usd(row.costUSD || 0),
     }));
-    renderTable(headers, printableRows, { Started: 18, Session: 44, Models: 24, Input: 10, Cache: 10, Output: 10, Reason: 10, Total: 10, Cost: 10 });
+    renderTable(headers, printableRows, { Started: 18, Session: 44, Models: 24, Input: 10, Cache: 10, Write: 10, Output: 10, Reason: 10, Total: 10, Cost: 10 });
     console.log('Totals');
     renderTable(headers, [{
       Started: '-',
@@ -675,38 +694,41 @@ function renderUsageTable(mode, rows, totals) {
       Models: '-',
       Input: m(totals.inputTokens || 0),
       Cache: m(totals.cachedInputTokens || 0),
+      Write: m(totals.cacheWriteInputTokens || 0),
       Output: m(totals.outputTokens || 0),
       Reason: m(totals.reasoningOutputTokens || 0),
       Total: m(totals.totalTokens || 0),
       Cost: usd(totals.costUSD || 0),
-    }], { Started: 18, Session: 44, Models: 24, Input: 10, Cache: 10, Output: 10, Reason: 10, Total: 10, Cost: 10 });
+    }], { Started: 18, Session: 44, Models: 24, Input: 10, Cache: 10, Write: 10, Output: 10, Reason: 10, Total: 10, Cost: 10 });
     return;
   }
 
-  const headers = ['Data', 'Models', 'Input', 'Cache', 'Output', 'Reason', 'Total', 'Cost'];
+  const headers = ['Data', 'Models', 'Input', 'Cache', 'Write', 'Output', 'Reason', 'Total', 'Cost'];
   const printableRows = rows.map((row) => ({
     Data: mode === 'monthly' ? String(row.month || '') : String(row.date || ''),
     Models: Object.keys(row.models || {}).map(normalizeModelName).sort().join('\n'),
     Input: m(row.inputTokens || 0),
     Cache: m(row.cachedInputTokens || 0),
+    Write: m(row.cacheWriteInputTokens || 0),
     Output: m(row.outputTokens || 0),
     Reason: m(row.reasoningOutputTokens || 0),
     Total: m(row.totalTokens || 0),
     Cost: usd(row.costUSD || 0),
   }));
 
-  renderTable(headers, printableRows, { Data: 12, Models: 34, Input: 10, Cache: 10, Output: 10, Reason: 10, Total: 10, Cost: 10 });
+  renderTable(headers, printableRows, { Data: 12, Models: 34, Input: 10, Cache: 10, Write: 10, Output: 10, Reason: 10, Total: 10, Cost: 10 });
   console.log('Totals');
   renderTable(headers, [{
     Data: 'ALL',
     Models: '-',
     Input: m(totals.inputTokens || 0),
     Cache: m(totals.cachedInputTokens || 0),
+    Write: m(totals.cacheWriteInputTokens || 0),
     Output: m(totals.outputTokens || 0),
     Reason: m(totals.reasoningOutputTokens || 0),
     Total: m(totals.totalTokens || 0),
     Cost: usd(totals.costUSD || 0),
-  }], { Data: 12, Models: 34, Input: 10, Cache: 10, Output: 10, Reason: 10, Total: 10, Cost: 10 });
+  }], { Data: 12, Models: 34, Input: 10, Cache: 10, Write: 10, Output: 10, Reason: 10, Total: 10, Cost: 10 });
 }
 
 function printHelp() {
@@ -759,6 +781,7 @@ function main() {
     const payload = buildJsonPayload(options.mode, [], {
       inputTokens: 0,
       cachedInputTokens: 0,
+      cacheWriteInputTokens: 0,
       outputTokens: 0,
       reasoningOutputTokens: 0,
       totalTokens: 0,
