@@ -2,7 +2,7 @@
 
 - Project: ccusage-codex-m
 - Purpose: Rebuild Codex JSONL usage data and estimate token cost.
-- Last updated: 2026-07-17
+- Last updated: 2026-07-18
 - Updated by: Codex
 
 ## Pricing
@@ -28,9 +28,16 @@ Codex 2026-07-10: the script supports `cacheWriteInputTokens` and prices GPT-5.6
 ## Verification
 
 - Syntax check: `node --check ccusage_m_view.js`
+- Regression check: `node test_pricing.js`
 
 ## 2026-07-10 Codex Troubleshooting Note
 
 The PowerShell command family runs `C:\Users\shuis\.codex\ccusage_m_view.js`, not the repository copy directly. After adding GPT-5.6 pricing to the repo copy, the installed runtime copy must also be synced or reinstalled with `scripts/install.ps1`.
 
 On 2026-07-10, Codex backed up the stale installed copy as `C:\Users\shuis\.codex\ccusage_m_view.js.bak-20260710-164044` and synced the updated repo script into `C:\Users\shuis\.codex\ccusage_m_view.js`.
+
+## 2026-07-18 Codex Display Update
+
+- The terminal table renderer now uses zero cell padding, narrower numeric/model caps, short `Mon DD` daily dates, and newline-separated model names so narrow panes stay compact without making model names unreadable.
+- This changes presentation only; `--json`, token accounting, and cost calculations are unchanged.
+- Terminal font size remains controlled by the terminal application itself; the script reduces the rendered character footprint and row height where possible.

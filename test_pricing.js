@@ -49,6 +49,21 @@ try {
   assert.strictEqual(report.daily[0].costUSD, 1.8, 'GPT-5.6 超过 272K 时不应切换长上下文价格');
   assert.strictEqual(report.daily[1].costUSD, 3.45, 'GPT-5.5 超过 272K 时仍应切换长上下文价格');
 
+  const compactOutput = execFileSync(process.execPath, [
+    path.join(__dirname, 'ccusage_m_view.js'),
+    'daily',
+    '--since',
+    '2026-07-12',
+    '--until',
+    '2026-07-13',
+  ], {
+    env: { ...process.env, CODEX_HOME: tempHome },
+    encoding: 'utf8',
+  });
+  assert.ok(compactOutput.includes('|Jul 12|gpt-5.6-sol'), '表格应使用紧凑日期');
+  assert.ok(compactOutput.includes('|Jul 13|gpt-5.5'), '表格应使用紧凑日期');
+  assert.ok(!compactOutput.includes('| Jul 12, 2026 |'), '表格不应保留旧的日期格式和左右空格');
+
   const forkParentFile = path.join(sessionDir, 'fork-parent.jsonl');
   const forkChildFile = path.join(sessionDir, 'fork-child.jsonl');
   const forkParentRecords = [

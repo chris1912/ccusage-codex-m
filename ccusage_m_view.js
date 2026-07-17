@@ -12,6 +12,32 @@ const DEFAULT_TIMEZONE = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UT
 const LEGACY_FALLBACK_MODEL = 'gpt-5';
 const MODES = new Set(['daily', 'monthly', 'sessions']);
 
+// Codex 2026-07-18: keep terminal tables compact so narrow panes remain readable.
+const TABLE_CELL_PADDING = 0;
+const USAGE_TABLE_CAPS = {
+  Data: 7,
+  Models: 16,
+  Input: 9,
+  Cache: 9,
+  Write: 9,
+  Output: 9,
+  Reason: 9,
+  Total: 9,
+  Cost: 9,
+};
+const SESSION_TABLE_CAPS = {
+  Started: 18,
+  Session: 40,
+  Models: 28,
+  Input: 9,
+  Cache: 9,
+  Write: 9,
+  Output: 9,
+  Reason: 9,
+  Total: 9,
+  Cost: 9,
+};
+
 // 每 100 万 token 的美元价格。
 // Codex 2026-07-16：GPT-5.6 面向订阅用户按统一价格估算；其他含 Above 字段的模型维持既有规则。
 // reasoningOutputTokens 仅展示，不单独计费，因为价格口径为输入、缓存和输出。
@@ -264,7 +290,6 @@ function formatDisplayDate(dateKey, locale) {
   const day = Number.parseInt(dayStr, 10);
   const date = new Date(Date.UTC(year, month - 1, day));
   return new Intl.DateTimeFormat(locale ?? 'en-US', {
-    year: 'numeric',
     month: 'short',
     day: '2-digit',
     timeZone: 'UTC',
@@ -747,9 +772,14 @@ function renderTable(headers, rows, caps) {
 
   for (const header of headers) widths[header] = Math.min(widths[header], caps[header] ?? widths[header]);
 
-  const border = '+' + headers.map((header) => '-'.repeat(widths[header] + 2)).join('+') + '+';
+  const border = '+' + headers.map((header) => '-'.repeat(widths[header] + TABLE_CELL_PADDING * 2)).join('+') + '+';
+  const formatCell = (value, width) => {
+    const padding = ' '.repeat(TABLE_CELL_PADDING);
+    return padding + padRight(value, width) + padding;
+  };
+
   console.log(border);
-  console.log('| ' + headers.map((header) => padRight(header, widths[header])).join(' | ') + ' |');
+  console.log('|' + headers.map((header) => formatCell(header, widths[header])).join('|') + '|');
   console.log(border);
 
   for (const row of rows) {
@@ -764,9 +794,9 @@ function renderTable(headers, rows, caps) {
       const values = headers.map((header) => {
         const line = cellLines[header][i] || '';
         const clipped = line.length > widths[header] ? line.slice(0, Math.max(widths[header] - 1, 0)) + '…' : line;
-        return padRight(clipped, widths[header]);
+        return formatCell(clipped, widths[header]);
       });
-      console.log('| ' + values.join(' | ') + ' |');
+      console.log('|' + values.join('|') + '|');
     }
     console.log(border);
   }
@@ -787,7 +817,7 @@ function renderUsageTable(mode, rows, totals) {
       Total: m(row.totalTokens || 0),
       Cost: usd(row.costUSD || 0),
     }));
-    renderTable(headers, printableRows, { Started: 18, Session: 44, Models: 24, Input: 10, Cache: 10, Write: 10, Output: 10, Reason: 10, Total: 10, Cost: 10 });
+    renderTable(headers, printableRows, SESSION_TABLE_CAPS);
     console.log('Totals');
     renderTable(headers, [{
       Started: '-',
@@ -800,7 +830,7 @@ function renderUsageTable(mode, rows, totals) {
       Reason: m(totals.reasoningOutputTokens || 0),
       Total: m(totals.totalTokens || 0),
       Cost: usd(totals.costUSD || 0),
-    }], { Started: 18, Session: 44, Models: 24, Input: 10, Cache: 10, Write: 10, Output: 10, Reason: 10, Total: 10, Cost: 10 });
+    }], SESSION_TABLE_CAPS);
     return;
   }
 
@@ -817,7 +847,7 @@ function renderUsageTable(mode, rows, totals) {
     Cost: usd(row.costUSD || 0),
   }));
 
-  renderTable(headers, printableRows, { Data: 12, Models: 34, Input: 10, Cache: 10, Write: 10, Output: 10, Reason: 10, Total: 10, Cost: 10 });
+  renderTable(headers, printableRows, USAGE_TABLE_CAPS);
   console.log('Totals');
   renderTable(headers, [{
     Data: 'ALL',
@@ -829,7 +859,7 @@ function renderUsageTable(mode, rows, totals) {
     Reason: m(totals.reasoningOutputTokens || 0),
     Total: m(totals.totalTokens || 0),
     Cost: usd(totals.costUSD || 0),
-  }], { Data: 12, Models: 34, Input: 10, Cache: 10, Write: 10, Output: 10, Reason: 10, Total: 10, Cost: 10 });
+  }], USAGE_TABLE_CAPS);
 }
 
 function printHelp() {

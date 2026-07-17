@@ -3,13 +3,14 @@
 一个用于统计 Codex 本地会话用量与费用的脚本与命令集合。  
 A local script + shell command snippets for tracking Codex token usage and estimated cost.
 
-## 本次更新（2026-07-17）
+## 本次更新（2026-07-18）
 
 - 修复 fork 子会话复制父历史 `token_count` 导致的重复计费；新增 `stats.forkReplaySuppressed` 统计。
 - 调整 GPT-5.6 的 Codex 订阅估算规则，统一使用基础价格，不再应用 API 长上下文加价。
 - 新增 `test_pricing.js`，覆盖 GPT-5.6 价格和 fork 历史去重回归检查。
 - 改进 PowerShell 5.1 空配置文件处理，以及 Git Bash/WSL 下的 Windows 路径转换。
-- 更新安装说明、迁移说明和 `MEMORY.md`，记录修复依据与验证结果。
+- 更新终端表格布局：取消单元格额外留白，日期使用 `Mon DD` 短格式，模型名称按行展示，适合窄窗口。
+- 更新安装说明、迁移说明和 `MEMORY.md`，记录修复依据、展示调整与验证结果。
 
 ## 一句话交给 AI 部署 (复制粘贴即可)
 
@@ -72,8 +73,9 @@ ccusage-codex-open
 本仓库提供一个本地脚本 `ccusage_m_view.js`，用于从你的 Codex 数据目录（默认 `~/.codex`）读取 session 事件（JSONL），重建每日、每月、以及“未归档 session”的用量与计费统计。
 
 它的目标是：
-- 输出更易读的表格（包含模型名换行展示、token 以 `M` 单位显示等）
+- 输出更易读的表格（模型名紧凑展示、token 以 `M` 单位显示等）
 - 统一口径（daily / monthly / sessions 三种统计都走同一套重建与计费逻辑）
+- 终端表格默认采用紧凑布局，日期使用短格式、模型名允许分行，减少列宽并适合窄窗口显示
 
 ### 功能与默认口径
 
@@ -89,6 +91,11 @@ ccusage-codex-open
 输出表头（保持一致）：
 - 日/月：`Data | Models | Input | Cache | Write | Output | Reason | Total | Cost`
 - session：`Started | Session | Models | Input | Cache | Write | Output | Reason | Total | Cost`
+
+终端显示说明：
+- 日/月统计的日期显示为 `Jul 18` 形式，以减少日期列宽。
+- 同一行存在多个模型时，模型名称在 `Models` 列内分行，表格高度会随模型数量增加，但不会额外拉宽其它列。
+- 终端字号由 PowerShell、Windows Terminal 或其他终端程序控制；脚本通过减少字符留白和列宽来压缩表格占用空间。
 
 ### 依赖
 
@@ -108,6 +115,9 @@ node ccusage_m_view.js daily --json
 
 node ccusage_m_view.js monthly
 node ccusage_m_view.js sessions
+
+# 运行价格、fork 去重和紧凑表格回归检查
+node test_pricing.js
 ```
 
 常用参数：
@@ -220,4 +230,8 @@ Both installers:
 
 Cost is computed using an internal price table. Prices can change; keep your table updated if you rely on cost accuracy.
 `Cache` means cached-input reads, and `Write` means cache writes. If local Codex logs do not expose cache-write fields, `Write` is shown as `0.000M`.
+
+### Terminal display
+
+Daily and monthly dates use the compact `Mon DD` format. Multiple model names are rendered on separate lines inside the `Models` column, allowing the table to grow vertically without unnecessarily widening the terminal output. Cell padding and common column caps are reduced for narrow panes. JSON output and accounting behavior are unchanged.
 
