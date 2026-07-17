@@ -52,6 +52,7 @@ function Ensure-BlockInProfile {
   )
 
   $content = if (Test-Path -LiteralPath $ProfilePath) { Get-Content -LiteralPath $ProfilePath -Raw } else { "" }
+  if ($null -eq $content) { $content = "" }
 
   $begin = "# >>> $MarkerId >>>"
   $end = "# <<< $MarkerId <<<"

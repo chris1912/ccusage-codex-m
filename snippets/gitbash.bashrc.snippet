@@ -1,13 +1,19 @@
-export CODEX_HOME="C:/Users/shuis/.codex"
+if [[ -n "${USERPROFILE:-}" ]] && command -v cygpath >/dev/null 2>&1; then
+  codex_home="$(cygpath -m "$USERPROFILE/.codex")"
+else
+  codex_home="$HOME/.codex"
+fi
+
+export CODEX_HOME="$codex_home"
 
 ccusage-codex-m() {
-  node /c/Users/shuis/.codex/ccusage_m_view.js daily "$@"
+  node "$codex_home/ccusage_m_view.js" daily "$@"
 }
 
 ccusage-codex-monthly() {
-  node /c/Users/shuis/.codex/ccusage_m_view.js monthly "$@"
+  node "$codex_home/ccusage_m_view.js" monthly "$@"
 }
 
 ccusage-codex-open() {
-  node /c/Users/shuis/.codex/ccusage_m_view.js sessions "$@"
+  node "$codex_home/ccusage_m_view.js" sessions "$@"
 }

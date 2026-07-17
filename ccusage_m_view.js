@@ -12,16 +12,14 @@ const DEFAULT_TIMEZONE = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UT
 const LEGACY_FALLBACK_MODEL = 'gpt-5';
 const MODES = new Set(['daily', 'monthly', 'sessions']);
 
-// USD per 1M tokens.
-// Standard rates are aligned to OpenAI's public pricing pages.
-// Long-context uplift is applied only per event when that event's input exceeds 272K.
-// reasoningOutputTokens are displayed but not billed separately because pricing is input/cache/output based.
+// 每 100 万 token 的美元价格。
+// Codex 2026-07-16：GPT-5.6 面向订阅用户按统一价格估算；其他含 Above 字段的模型维持既有规则。
+// reasoningOutputTokens 仅展示，不单独计费，因为价格口径为输入、缓存和输出。
 const PRICING_PER_M = {
-  // Codex pricing update (2026-07-10): GPT-5.6 preview pricing from OpenAI.
-  // Codex 2026-07-10: cache is cached-input reads; cacheWrite is cache writes.
-  'gpt-5.6-sol': { input: 5.0, cache: 0.5, cacheWrite: 6.25, output: 30.0, inputAbove: 10.0, cacheAbove: 1.0, cacheWriteAbove: 12.5, outputAbove: 45.0 },
-  'gpt-5.6-terra': { input: 2.5, cache: 0.25, cacheWrite: 3.125, output: 15.0, inputAbove: 5.0, cacheAbove: 0.5, cacheWriteAbove: 6.25, outputAbove: 22.5 },
-  'gpt-5.6-luna': { input: 1.0, cache: 0.1, cacheWrite: 1.25, output: 6.0, inputAbove: 2.0, cacheAbove: 0.2, cacheWriteAbove: 2.5, outputAbove: 9.0 },
+  // Codex 2026-07-16：订阅用户估算不应用 GPT-5.6 的 API 长上下文加价。
+  'gpt-5.6-sol': { input: 5.0, cache: 0.5, cacheWrite: 6.25, output: 30.0 },
+  'gpt-5.6-terra': { input: 2.5, cache: 0.25, cacheWrite: 3.125, output: 15.0 },
+  'gpt-5.6-luna': { input: 1.0, cache: 0.1, cacheWrite: 1.25, output: 6.0 },
   'gpt-5.5': { input: 5.0, cache: 0.5, output: 30.0, inputAbove: 10.0, cacheAbove: 1.0, outputAbove: 45.0 },
   // Pro models do not advertise a cached-input discount; bill cached input at the standard input rate.
   'gpt-5.5-pro': { input: 30.0, cache: 30.0, output: 180.0, inputAbove: 60.0, cacheAbove: 60.0, outputAbove: 270.0 },
@@ -357,6 +355,81 @@ function* walkJsonlFiles(dir) {
   }
 }
 
+/**
+ * 读取并解析一个 JSONL 会话文件；坏行直接忽略，保持原统计逻辑的容错行为。
+ * Codex 2026-07-17：先缓存解析结果，供 fork 父子序列核对和正式计费共用。
+ */
+function readJsonlRecords(file) {
+  const records = [];
+  const lines = fs.readFileSync(file, 'utf8').split(/\r?\n/);
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+    try {
+      const record = JSON.parse(trimmed);
+      records.push(record);
+    } catch {
+      continue;
+    }
+  }
+  return records;
+}
+
+function getSessionMeta(records) {
+  return records.find((record) => {
+    return record?.type === 'session_meta' && record.payload?.id != null;
+  });
+}
+
+function getTokenCountRecords(records) {
+  return records.filter((record) => {
+    return record?.type === 'event_msg' && record.payload?.type === 'token_count';
+  });
+}
+
+function getRawUsageFingerprint(record) {
+  const info = record?.payload?.info;
+  const lastUsage = normalizeRawUsage(info?.last_token_usage);
+  const totalUsage = normalizeRawUsage(info?.total_token_usage);
+  if (totalUsage != null) return JSON.stringify({ totalUsage });
+  if (lastUsage != null) return JSON.stringify({ lastUsage });
+  return null;
+}
+
+/**
+ * 查找 fork 子文件开头复制的父 token 序列。
+ * fork 会重写复制记录的时间戳，因此必须按累计用量序列比对，不能按时间戳去重。
+ */
+function findForkReplayCount(childRecords, parentRecords, forkTimestamp) {
+  const childTokens = getTokenCountRecords(childRecords);
+  const forkTime = Date.parse(forkTimestamp || '');
+  const parentTokens = getTokenCountRecords(parentRecords).filter((record) => {
+    const timestamp = Date.parse(record.timestamp || '');
+    return !Number.isFinite(forkTime) || !Number.isFinite(timestamp) || timestamp <= forkTime;
+  });
+  if (childTokens.length === 0 || parentTokens.length === 0) return 0;
+
+  const childFingerprints = childTokens.map(getRawUsageFingerprint);
+  const parentFingerprints = parentTokens.map(getRawUsageFingerprint);
+  let bestMatch = 0;
+  for (let start = 0; start < parentFingerprints.length; start += 1) {
+    if (childFingerprints[0] !== parentFingerprints[start]) continue;
+    let matchLength = 0;
+    while (
+      start + matchLength < parentFingerprints.length &&
+      matchLength < childFingerprints.length &&
+      childFingerprints[matchLength] === parentFingerprints[start + matchLength]
+    ) {
+      matchLength += 1;
+    }
+    bestMatch = Math.max(bestMatch, matchLength);
+  }
+  return bestMatch;
+}
+
+/**
+ * 从原始会话事件重建增量用量；fork 复制前缀只更新累计基线，不生成费用事件。
+ */
 function loadTokenUsageEvents(sessionDirs) {
   const events = [];
   const missingDirectories = [];
@@ -364,7 +437,9 @@ function loadTokenUsageEvents(sessionDirs) {
     files: 0,
     tokenCountEvents: 0,
     duplicateSuppressed: 0,
+    forkReplaySuppressed: 0,
   };
+  const sessionFiles = [];
 
   for (const dir of sessionDirs) {
     const directoryPath = path.resolve(dir);
@@ -376,93 +451,119 @@ function loadTokenUsageEvents(sessionDirs) {
     for (const file of walkJsonlFiles(directoryPath)) {
       stats.files += 1;
       const sessionId = path.relative(directoryPath, file).split(path.sep).join('/').replace(/\.jsonl$/i, '');
-      const lines = fs.readFileSync(file, 'utf8').split(/\r?\n/);
-      let previousTotals = null;
-      let currentModel;
-      let currentModelIsFallback = false;
+      sessionFiles.push({ file, sessionId, records: readJsonlRecords(file) });
+    }
+  }
 
-      for (const line of lines) {
-        const trimmed = line.trim();
-        if (!trimmed) continue;
-        let record;
-        try {
-          record = JSON.parse(trimmed);
-        } catch {
-          continue;
-        }
+  const filesByCodexId = new Map();
+  for (const sessionFile of sessionFiles) {
+    const meta = getSessionMeta(sessionFile.records);
+    const codexId = asNonEmptyString(meta?.payload?.id);
+    if (codexId != null) filesByCodexId.set(codexId, sessionFile);
+  }
 
-        if (record?.type === 'turn_context') {
-          const contextModel = extractModel(record.payload);
-          if (contextModel != null) {
-            currentModel = contextModel;
-            currentModelIsFallback = false;
-          }
-          continue;
-        }
+  const forkReplayCounts = new Map();
+  for (const sessionFile of sessionFiles) {
+    const meta = getSessionMeta(sessionFile.records);
+    const parentId = asNonEmptyString(meta?.payload?.forked_from_id);
+    if (parentId == null) continue;
+    const parentFile = filesByCodexId.get(parentId);
+    if (parentFile == null) continue;
+    const forkTime = meta.payload?.timestamp || meta.timestamp;
+    const replayCount = findForkReplayCount(sessionFile.records, parentFile.records, forkTime);
+    if (replayCount > 0) forkReplayCounts.set(sessionFile.sessionId, replayCount);
+  }
 
-        if (record?.type !== 'event_msg' || record?.payload?.type !== 'token_count') continue;
-        stats.tokenCountEvents += 1;
+  for (const sessionFile of sessionFiles) {
+    const { sessionId, records } = sessionFile;
+    let previousTotals = null;
+    let currentModel;
+    let currentModelIsFallback = false;
+    let forkReplayRemaining = forkReplayCounts.get(sessionId) || 0;
 
-        const timestamp = record.timestamp;
-        if (timestamp == null) continue;
-        const info = record.payload.info;
-        const lastUsage = normalizeRawUsage(info?.last_token_usage);
-        const totalUsage = normalizeRawUsage(info?.total_token_usage);
-
-        let raw = null;
-        if (totalUsage != null) {
-          if (previousTotals != null &&
-            totalUsage.input_tokens === previousTotals.input_tokens &&
-            totalUsage.cached_input_tokens === previousTotals.cached_input_tokens &&
-            totalUsage.cache_write_input_tokens === previousTotals.cache_write_input_tokens &&
-            totalUsage.output_tokens === previousTotals.output_tokens &&
-            totalUsage.reasoning_output_tokens === previousTotals.reasoning_output_tokens &&
-            totalUsage.total_tokens === previousTotals.total_tokens &&
-            lastUsage != null &&
-            (lastUsage.input_tokens > 0 || lastUsage.cached_input_tokens > 0 || lastUsage.cache_write_input_tokens > 0 || lastUsage.output_tokens > 0 || lastUsage.reasoning_output_tokens > 0 || lastUsage.total_tokens > 0)) {
-            stats.duplicateSuppressed += 1;
-          }
-          raw = subtractRawUsage(totalUsage, previousTotals);
-          previousTotals = totalUsage;
-        } else {
-          raw = lastUsage;
-        }
-
-        if (raw == null) continue;
-        const delta = convertToDelta(raw);
-        if (delta.inputTokens === 0 && delta.cachedInputTokens === 0 && delta.cacheWriteInputTokens === 0 && delta.outputTokens === 0 && delta.reasoningOutputTokens === 0) continue;
-
-        const extractedModel = extractModel({ ...(record.payload || {}), info });
-        let isFallbackModel = false;
-        if (extractedModel != null) {
-          currentModel = extractedModel;
+    for (const record of records) {
+      if (record?.type === 'turn_context') {
+        const contextModel = extractModel(record.payload);
+        if (contextModel != null) {
+          currentModel = contextModel;
           currentModelIsFallback = false;
         }
-
-        let model = extractedModel ?? currentModel;
-        if (model == null) {
-          model = LEGACY_FALLBACK_MODEL;
-          isFallbackModel = true;
-          currentModel = model;
-          currentModelIsFallback = true;
-        } else if (extractedModel == null && currentModelIsFallback) {
-          isFallbackModel = true;
-        }
-
-        const event = {
-          sessionId,
-          timestamp,
-          model,
-          inputTokens: delta.inputTokens,
-          cachedInputTokens: delta.cachedInputTokens,
-          cacheWriteInputTokens: delta.cacheWriteInputTokens,
-          outputTokens: delta.outputTokens,
-          reasoningOutputTokens: delta.reasoningOutputTokens,
-          totalTokens: delta.totalTokens,
-        };
-        if (isFallbackModel) event.isFallbackModel = true;
-        events.push(event);
+        continue;
       }
+
+      if (record?.type !== 'event_msg' || record?.payload?.type !== 'token_count') continue;
+      stats.tokenCountEvents += 1;
+
+      const timestamp = record.timestamp;
+      if (timestamp == null) continue;
+      const info = record.payload.info;
+      const lastUsage = normalizeRawUsage(info?.last_token_usage);
+      const totalUsage = normalizeRawUsage(info?.total_token_usage);
+
+      let raw = null;
+      if (totalUsage != null) {
+        if (previousTotals != null &&
+          totalUsage.input_tokens === previousTotals.input_tokens &&
+          totalUsage.cached_input_tokens === previousTotals.cached_input_tokens &&
+          totalUsage.cache_write_input_tokens === previousTotals.cache_write_input_tokens &&
+          totalUsage.output_tokens === previousTotals.output_tokens &&
+          totalUsage.reasoning_output_tokens === previousTotals.reasoning_output_tokens &&
+          totalUsage.total_tokens === previousTotals.total_tokens &&
+          lastUsage != null &&
+          (lastUsage.input_tokens > 0 || lastUsage.cached_input_tokens > 0 || lastUsage.cache_write_input_tokens > 0 || lastUsage.output_tokens > 0 || lastUsage.reasoning_output_tokens > 0 || lastUsage.total_tokens > 0)) {
+          stats.duplicateSuppressed += 1;
+        }
+        raw = subtractRawUsage(totalUsage, previousTotals);
+        previousTotals = totalUsage;
+      } else {
+        raw = lastUsage;
+      }
+
+      if (forkReplayRemaining > 0) {
+        const replayModel = extractModel({ ...(record.payload || {}), info });
+        if (replayModel != null) {
+          currentModel = replayModel;
+          currentModelIsFallback = false;
+        }
+        forkReplayRemaining -= 1;
+        stats.forkReplaySuppressed += 1;
+        continue;
+      }
+
+      if (raw == null) continue;
+      const delta = convertToDelta(raw);
+      if (delta.inputTokens === 0 && delta.cachedInputTokens === 0 && delta.cacheWriteInputTokens === 0 && delta.outputTokens === 0 && delta.reasoningOutputTokens === 0) continue;
+
+      const extractedModel = extractModel({ ...(record.payload || {}), info });
+      let isFallbackModel = false;
+      if (extractedModel != null) {
+        currentModel = extractedModel;
+        currentModelIsFallback = false;
+      }
+
+      let model = extractedModel ?? currentModel;
+      if (model == null) {
+        model = LEGACY_FALLBACK_MODEL;
+        isFallbackModel = true;
+        currentModel = model;
+        currentModelIsFallback = true;
+      } else if (extractedModel == null && currentModelIsFallback) {
+        isFallbackModel = true;
+      }
+
+      const event = {
+        sessionId,
+        timestamp,
+        model,
+        inputTokens: delta.inputTokens,
+        cachedInputTokens: delta.cachedInputTokens,
+        cacheWriteInputTokens: delta.cacheWriteInputTokens,
+        outputTokens: delta.outputTokens,
+        reasoningOutputTokens: delta.reasoningOutputTokens,
+        totalTokens: delta.totalTokens,
+      };
+      if (isFallbackModel) event.isFallbackModel = true;
+      events.push(event);
     }
   }
 
@@ -815,6 +916,9 @@ function main() {
   }
   if (stats.duplicateSuppressed > 0) {
     console.error(`Deduplicated repeated token_count entries: ${stats.duplicateSuppressed}`);
+  }
+  if (stats.forkReplaySuppressed > 0) {
+    console.error(`已跳过 fork 复制的历史 token_count 记录: ${stats.forkReplaySuppressed}`);
   }
 }
 

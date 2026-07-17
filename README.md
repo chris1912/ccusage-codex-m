@@ -3,6 +3,14 @@
 一个用于统计 Codex 本地会话用量与费用的脚本与命令集合。  
 A local script + shell command snippets for tracking Codex token usage and estimated cost.
 
+## 本次更新（2026-07-17）
+
+- 修复 fork 子会话复制父历史 `token_count` 导致的重复计费；新增 `stats.forkReplaySuppressed` 统计。
+- 调整 GPT-5.6 的 Codex 订阅估算规则，统一使用基础价格，不再应用 API 长上下文加价。
+- 新增 `test_pricing.js`，覆盖 GPT-5.6 价格和 fork 历史去重回归检查。
+- 改进 PowerShell 5.1 空配置文件处理，以及 Git Bash/WSL 下的 Windows 路径转换。
+- 更新安装说明、迁移说明和 `MEMORY.md`，记录修复依据与验证结果。
+
 ## 一句话交给 AI 部署 (复制粘贴即可)
 
 中文：
@@ -126,7 +134,35 @@ node ccusage_m_view.js sessions
 
 脚本会根据内置的模型价格表计算 Cost。  
 `Cache` 表示缓存读取 token，`Write` 表示缓存写入 token；如果 Codex 本地日志未暴露缓存写入字段，`Write` 会显示为 `0.000M`。
+Codex 2026-07-16：本工具面向 Codex 订阅用户时，GPT-5.6 按统一价格估算，不应用 API 长上下文加价；其他配置了长上下文价格的模型维持原规则。
+fork 子会话会在新 JSONL 文件开头复制父会话的历史 `token_count` 记录；脚本会通过 `forked_from_id` 和父子累计用量序列识别并跳过这段复制历史，只计入 fork 之后真实产生的调用。`--json` 输出中的 `stats.forkReplaySuppressed` 表示跳过的复制记录数。
 注意：价格表可能会随时间变化，建议你定期更新价格数据或在脚本里维护你自己的价格表。
+
+#### fork 修复验证
+
+在本机 2026-07-17 对同一份 `~/.codex/sessions` 快照做前后对比：
+
+| 日期 | 修复前 | 修复后 | 去掉的复制历史费用 |
+| --- | ---: | ---: | ---: |
+| 2026-07-14 | `$159.818869` | `$97.458398` | `$62.360471` |
+| 2026-07-15 | `$129.861799` | `$74.847920` | `$55.013879` |
+| 2026-07-16 | `$487.875700` | `$154.618444` | `$333.257256` |
+| 2026-07-17 | `$105.851193` | `$9.960284` | `$95.890908` |
+
+因此 7 月 16 日的高额中约 68.3% 是 fork 历史复制造成的；修复后的 `$154.618444` 仍是当天真实新增调用，不能再从父历史中扣除。
+
+#### 移植到其他电脑
+
+本工具只依赖 Node.js（建议 20.19.4 或更高版本），不依赖本机用户名或固定路径。将仓库复制到目标电脑后执行：
+
+```powershell
+powershell.exe -ExecutionPolicy Bypass -File .\scripts\install.ps1 -CodexHome "$HOME\.codex" -Force
+. $PROFILE
+ccusage-codex-m --json
+node test_pricing.js
+```
+
+如果 Codex 数据目录不是默认位置，替换 `-CodexHome`；Git Bash/WSL 使用 `CODEX_HOME="/path/to/.codex" bash scripts/install.sh`。更新代码后重新运行安装命令即可同步运行时脚本，安装器会自动备份旧脚本和 shell 配置。
 
 ## English
 
