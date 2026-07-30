@@ -64,6 +64,61 @@ try {
   assert.ok(compactOutput.includes('|Jul 13|gpt-5.5'), '表格应使用紧凑日期');
   assert.ok(!compactOutput.includes('| Jul 12, 2026 |'), '表格不应保留旧的日期格式和左右空格');
 
+  const currentPricingFile = path.join(sessionDir, 'current-pricing.jsonl');
+  const currentPricingRecords = [
+    { type: 'turn_context', timestamp: '2026-07-10T00:00:00Z', payload: { model: 'gpt-5.6-terra' } },
+    {
+      type: 'event_msg',
+      timestamp: '2026-07-10T00:00:01Z',
+      payload: {
+        type: 'token_count',
+        info: {
+          last_token_usage: {
+            input_tokens: 1000000,
+            cached_input_tokens: 200000,
+            cache_write_input_tokens: 100000,
+            output_tokens: 100000,
+            total_tokens: 1100000,
+          },
+        },
+      },
+    },
+    { type: 'turn_context', timestamp: '2026-07-11T00:00:00Z', payload: { model: 'gpt-5.6-luna' } },
+    {
+      type: 'event_msg',
+      timestamp: '2026-07-11T00:00:01Z',
+      payload: {
+        type: 'token_count',
+        info: {
+          last_token_usage: {
+            input_tokens: 1000000,
+            cached_input_tokens: 200000,
+            cache_write_input_tokens: 100000,
+            output_tokens: 100000,
+            total_tokens: 1100000,
+          },
+        },
+      },
+    },
+  ];
+  fs.writeFileSync(currentPricingFile, `${currentPricingRecords.map(JSON.stringify).join('\n')}\n`, 'utf8');
+
+  const currentPricingOutput = execFileSync(process.execPath, [
+    path.join(__dirname, 'ccusage_m_view.js'),
+    'daily',
+    '--json',
+    '--since',
+    '2026-07-10',
+    '--until',
+    '2026-07-11',
+  ], {
+    env: { ...process.env, CODEX_HOME: tempHome },
+    encoding: 'utf8',
+  });
+  const currentPricingReport = JSON.parse(currentPricingOutput);
+  assert.strictEqual(currentPricingReport.daily[0].costUSD, 2.89, 'GPT-5.6 Terra 应使用当前输入、缓存、写入和输出价格');
+  assert.strictEqual(currentPricingReport.daily[1].costUSD, 0.289, 'GPT-5.6 Luna 应使用当前输入、缓存、写入和输出价格');
+
   const forkParentFile = path.join(sessionDir, 'fork-parent.jsonl');
   const forkChildFile = path.join(sessionDir, 'fork-child.jsonl');
   const forkParentRecords = [

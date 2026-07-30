@@ -42,10 +42,11 @@ const SESSION_TABLE_CAPS = {
 // Codex 2026-07-16：GPT-5.6 面向订阅用户按统一价格估算；其他含 Above 字段的模型维持既有规则。
 // reasoningOutputTokens 仅展示，不单独计费，因为价格口径为输入、缓存和输出。
 const PRICING_PER_M = {
-  // Codex 2026-07-16：订阅用户估算不应用 GPT-5.6 的 API 长上下文加价。
+  // Codex 2026-07-31：依据 OpenAI 官方模型比较页更新 GPT-5.6 Terra/Luna 当前标准价格。
+  // GPT-5.6 缓存写入按未缓存输入价格的 1.25 倍计算；Codex 订阅估算不应用 API 长上下文加价。
   'gpt-5.6-sol': { input: 5.0, cache: 0.5, cacheWrite: 6.25, output: 30.0 },
-  'gpt-5.6-terra': { input: 2.5, cache: 0.25, cacheWrite: 3.125, output: 15.0 },
-  'gpt-5.6-luna': { input: 1.0, cache: 0.1, cacheWrite: 1.25, output: 6.0 },
+  'gpt-5.6-terra': { input: 2.0, cache: 0.2, cacheWrite: 2.5, output: 12.0 },
+  'gpt-5.6-luna': { input: 0.2, cache: 0.02, cacheWrite: 0.25, output: 1.2 },
   'gpt-5.5': { input: 5.0, cache: 0.5, output: 30.0, inputAbove: 10.0, cacheAbove: 1.0, outputAbove: 45.0 },
   // Pro models do not advertise a cached-input discount; bill cached input at the standard input rate.
   'gpt-5.5-pro': { input: 30.0, cache: 30.0, output: 180.0, inputAbove: 60.0, cacheAbove: 60.0, outputAbove: 270.0 },

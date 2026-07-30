@@ -3,13 +3,14 @@
 一个用于统计 Codex 本地会话用量与费用的脚本与命令集合。  
 A local script + shell command snippets for tracking Codex token usage and estimated cost.
 
-## 本次更新（2026-07-18）
+## 本次更新（2026-07-31）
 
 - 修复 fork 子会话复制父历史 `token_count` 导致的重复计费；新增 `stats.forkReplaySuppressed` 统计。
 - 调整 GPT-5.6 的 Codex 订阅估算规则，统一使用基础价格，不再应用 API 长上下文加价。
 - 新增 `test_pricing.js`，覆盖 GPT-5.6 价格和 fork 历史去重回归检查。
 - 改进 PowerShell 5.1 空配置文件处理，以及 Git Bash/WSL 下的 Windows 路径转换。
 - 更新终端表格布局：取消单元格额外留白，日期使用 `Mon DD` 短格式，模型名称按行展示，适合窄窗口。
+- 更新 GPT-5.6 Terra/Luna 的官方当前价格，并补充缓存写入价格回归测试。
 - 更新安装说明、迁移说明和 `MEMORY.md`，记录修复依据、展示调整与验证结果。
 
 ## 一句话交给 AI 部署 (复制粘贴即可)
@@ -145,6 +146,8 @@ node test_pricing.js
 脚本会根据内置的模型价格表计算 Cost。  
 `Cache` 表示缓存读取 token，`Write` 表示缓存写入 token；如果 Codex 本地日志未暴露缓存写入字段，`Write` 会显示为 `0.000M`。
 Codex 2026-07-16：本工具面向 Codex 订阅用户时，GPT-5.6 按统一价格估算，不应用 API 长上下文加价；其他配置了长上下文价格的模型维持原规则。
+2026-07-31：依据 OpenAI 官方模型比较页更新 GPT-5.6 当前标准价格：Sol 为输入 `$5.00`、缓存读取 `$0.50`、输出 `$30.00`；Terra 为输入 `$2.00`、缓存读取 `$0.20`、输出 `$12.00`；Luna 为输入 `$0.20`、缓存读取 `$0.02`、输出 `$1.20`。GPT-5.6 缓存写入按未缓存输入价格的 1.25 倍计费，因此 Terra 写入为 `$2.50`，Luna 写入为 `$0.25`。
+价格来源：<https://developers.openai.com/api/docs/models/compare>。
 fork 子会话会在新 JSONL 文件开头复制父会话的历史 `token_count` 记录；脚本会通过 `forked_from_id` 和父子累计用量序列识别并跳过这段复制历史，只计入 fork 之后真实产生的调用。`--json` 输出中的 `stats.forkReplaySuppressed` 表示跳过的复制记录数。
 注意：价格表可能会随时间变化，建议你定期更新价格数据或在脚本里维护你自己的价格表。
 
@@ -230,6 +233,7 @@ Both installers:
 
 Cost is computed using an internal price table. Prices can change; keep your table updated if you rely on cost accuracy.
 `Cache` means cached-input reads, and `Write` means cache writes. If local Codex logs do not expose cache-write fields, `Write` is shown as `0.000M`.
+As of 2026-07-31, the current GPT-5.6 standard prices are: Sol `$5.00` input, `$0.50` cached input, `$30.00` output; Terra `$2.00`, `$0.20`, `$12.00`; Luna `$0.20`, `$0.02`, `$1.20`. GPT-5.6 cache writes are billed at 1.25x the uncached input price, so Terra writes cost `$2.50` and Luna writes cost `$0.25` per 1M tokens. Source: <https://developers.openai.com/api/docs/models/compare>.
 
 ### Terminal display
 

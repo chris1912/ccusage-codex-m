@@ -2,18 +2,28 @@
 
 - Project: ccusage-codex-m
 - Purpose: Rebuild Codex JSONL usage data and estimate token cost.
-- Last updated: 2026-07-18
+- Last updated: 2026-07-31
 - Updated by: Codex
 
 ## Pricing
 
 The active pricing table is `ccusage_m_view.js` in `PRICING_PER_M`, expressed in USD per 1M tokens.
 
-On 2026-07-10, the GPT-5.6 preview family was added from OpenAI's June 26, 2026 announcement (https://openai.com/index/previewing-gpt-5-6-sol/):
+On 2026-07-10, the GPT-5.6 preview family was added from OpenAI's June 26, 2026 announcement (https://openai.com/index/previewing-gpt-5-6-sol/). The following values are the historical preview baseline and were superseded by the current pricing update below:
 
 - `gpt-5.6-sol`: input 5.0, cached-input read 0.5, cache write 6.25, output 30.0
 - `gpt-5.6-terra`: input 2.5, cached-input read 0.25, cache write 3.125, output 15.0
 - `gpt-5.6-luna`: input 1.0, cached-input read 0.1, cache write 1.25, output 6.0
+
+## 2026-07-31 Codex Pricing Update
+
+OpenAI's current model comparison page lists the following updated standard prices per 1M tokens:
+
+- `gpt-5.6-sol`: input 5.0, cached-input read 0.5, cache write 6.25, output 30.0 (unchanged)
+- `gpt-5.6-terra`: input 2.0, cached-input read 0.2, cache write 2.5, output 12.0
+- `gpt-5.6-luna`: input 0.2, cached-input read 0.02, cache write 0.25, output 1.2
+
+The GPT-5.5, GPT-5.4, and other legacy GPT-5 entries remain unchanged. GPT-5.6 cache writes use 1.25x the uncached input rate. Source: https://developers.openai.com/api/docs/models/compare
 
 Codex 2026-07-16：按主人要求，本工具定位为 Codex 订阅用户的本地金额估算，不采用 API 长上下文加价。GPT-5.6 对所有请求使用统一价格；GPT-5.4 和 GPT-5.5 的既有配置保持不变。
 
