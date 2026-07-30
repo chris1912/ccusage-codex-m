@@ -9,7 +9,7 @@
 
 The active pricing table is `ccusage_m_view.js` in `PRICING_PER_M`, expressed in USD per 1M tokens.
 
-On 2026-07-10, the GPT-5.6 preview family was added from OpenAI's June 26, 2026 announcement (https://openai.com/index/previewing-gpt-5-6-sol/). The following values are the historical preview baseline and were superseded by the current pricing update below:
+On 2026-07-10, the GPT-5.6 preview family was added from OpenAI's June 26, 2026 announcement (https://openai.com/index/previewing-gpt-5-6-sol/). The following values are retained as the historical baseline for events before the current pricing update:
 
 - `gpt-5.6-sol`: input 5.0, cached-input read 0.5, cache write 6.25, output 30.0
 - `gpt-5.6-terra`: input 2.5, cached-input read 0.25, cache write 3.125, output 15.0
@@ -24,6 +24,12 @@ OpenAI's current model comparison page lists the following updated standard pric
 - `gpt-5.6-luna`: input 0.2, cached-input read 0.02, cache write 0.25, output 1.2
 
 The GPT-5.5, GPT-5.4, and other legacy GPT-5 entries remain unchanged. GPT-5.6 cache writes use 1.25x the uncached input rate. Source: https://developers.openai.com/api/docs/models/compare
+
+## 2026-07-31 Historical Pricing and Notes
+
+`PRICING_HISTORY` in `ccusage_m_view.js` selects the price version from each `token_count` event timestamp, so older Terra/Luna sessions are not recomputed with the latest price. The current implementation assumes the updated prices became effective at `2026-07-31T00:00:00Z`; this is an explicit configuration point to revise if OpenAI publishes a different effective timestamp.
+
+`PRICING_CHANGE_EVENTS` feeds the rightmost `Notes` column. Daily and monthly rows show `官方价格变更` on the effective local date, while a session row shows it if any counted event in that session falls on that date. JSON rows also expose the aggregated `notes` value.
 
 Codex 2026-07-16：按主人要求，本工具定位为 Codex 订阅用户的本地金额估算，不采用 API 长上下文加价。GPT-5.6 对所有请求使用统一价格；GPT-5.4 和 GPT-5.5 的既有配置保持不变。
 
@@ -49,5 +55,5 @@ On 2026-07-10, Codex backed up the stale installed copy as `C:\Users\shuis\.code
 ## 2026-07-18 Codex Display Update
 
 - The terminal table renderer now uses zero cell padding, narrower numeric/model caps, short `Mon DD` daily dates, and newline-separated model names so narrow panes stay compact without making model names unreadable.
-- This changes presentation only; `--json`, token accounting, and cost calculations are unchanged.
+- The renderer adds a rightmost `Notes` column for pricing-change reminders; historical pricing selection is based on each token event timestamp.
 - Terminal font size remains controlled by the terminal application itself; the script reduces the rendered character footprint and row height where possible.

@@ -66,10 +66,11 @@ try {
 
   const currentPricingFile = path.join(sessionDir, 'current-pricing.jsonl');
   const currentPricingRecords = [
-    { type: 'turn_context', timestamp: '2026-07-10T00:00:00Z', payload: { model: 'gpt-5.6-terra' } },
+    // Codex 2026-07-31：验证价格变更日前后按 token_count 时间分别计费。
+    { type: 'turn_context', timestamp: '2026-07-30T00:00:00Z', payload: { model: 'gpt-5.6-terra' } },
     {
       type: 'event_msg',
-      timestamp: '2026-07-10T00:00:01Z',
+      timestamp: '2026-07-30T00:00:01Z',
       payload: {
         type: 'token_count',
         info: {
@@ -83,10 +84,27 @@ try {
         },
       },
     },
-    { type: 'turn_context', timestamp: '2026-07-11T00:00:00Z', payload: { model: 'gpt-5.6-luna' } },
+    { type: 'turn_context', timestamp: '2026-07-31T00:00:00Z', payload: { model: 'gpt-5.6-luna' } },
     {
       type: 'event_msg',
-      timestamp: '2026-07-11T00:00:01Z',
+      timestamp: '2026-07-31T00:00:01Z',
+      payload: {
+        type: 'token_count',
+        info: {
+          last_token_usage: {
+            input_tokens: 1000000,
+            cached_input_tokens: 200000,
+            cache_write_input_tokens: 100000,
+            output_tokens: 100000,
+            total_tokens: 1100000,
+          },
+        },
+      },
+    },
+    { type: 'turn_context', timestamp: '2026-08-01T00:00:00Z', payload: { model: 'gpt-5.6-terra' } },
+    {
+      type: 'event_msg',
+      timestamp: '2026-08-01T00:00:01Z',
       payload: {
         type: 'token_count',
         info: {
@@ -108,16 +126,40 @@ try {
     'daily',
     '--json',
     '--since',
-    '2026-07-10',
+    '2026-07-30',
     '--until',
-    '2026-07-11',
+    '2026-08-01',
+    '--timezone',
+    'UTC',
   ], {
     env: { ...process.env, CODEX_HOME: tempHome },
     encoding: 'utf8',
   });
   const currentPricingReport = JSON.parse(currentPricingOutput);
-  assert.strictEqual(currentPricingReport.daily[0].costUSD, 2.89, 'GPT-5.6 Terra 应使用当前输入、缓存、写入和输出价格');
-  assert.strictEqual(currentPricingReport.daily[1].costUSD, 0.289, 'GPT-5.6 Luna 应使用当前输入、缓存、写入和输出价格');
+  assert.strictEqual(currentPricingReport.daily[0].costUSD, 3.6125, '价格变更前的 GPT-5.6 Terra 应使用历史价格');
+  assert.strictEqual(currentPricingReport.daily[1].costUSD, 0.289, '价格变更后的 GPT-5.6 Luna 应使用当前价格');
+  assert.strictEqual(currentPricingReport.daily[2].costUSD, 2.89, '价格变更后的 GPT-5.6 Terra 应使用当前价格');
+
+  const noteOutput = execFileSync(process.execPath, [
+    path.join(__dirname, 'ccusage_m_view.js'),
+    'daily',
+    '--since',
+    '2026-07-30',
+    '--until',
+    '2026-08-01',
+    '--timezone',
+    'UTC',
+  ], {
+    env: { ...process.env, CODEX_HOME: tempHome },
+    encoding: 'utf8',
+  });
+  const noteLines = noteOutput.split(/\r?\n/);
+  const preChangeLine = noteLines.find((line) => line.includes('|Jul 30|'));
+  const changeLine = noteLines.find((line) => line.includes('|Jul 31|'));
+  const headerLine = noteLines.find((line) => line.includes('Data') && line.includes('Notes'));
+  assert.ok(headerLine && headerLine.endsWith('|'), '终端表格最右侧应包含 Notes 列');
+  assert.ok(preChangeLine && !preChangeLine.includes('官方价格变更'), '价格变更前日期不应显示价格变更备注');
+  assert.ok(changeLine && changeLine.includes('官方价格变更'), '价格变更生效日期应显示价格变更备注');
 
   const forkParentFile = path.join(sessionDir, 'fork-parent.jsonl');
   const forkChildFile = path.join(sessionDir, 'fork-child.jsonl');

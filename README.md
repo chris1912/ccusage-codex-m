@@ -3,7 +3,7 @@
 一个用于统计 Codex 本地会话用量与费用的脚本与命令集合。  
 A local script + shell command snippets for tracking Codex token usage and estimated cost.
 
-## 本次更新（2026-07-31）
+## 重要更新 / Important Update（2026-07-31）
 
 - 修复 fork 子会话复制父历史 `token_count` 导致的重复计费；新增 `stats.forkReplaySuppressed` 统计。
 - 调整 GPT-5.6 的 Codex 订阅估算规则，统一使用基础价格，不再应用 API 长上下文加价。
@@ -11,7 +11,15 @@ A local script + shell command snippets for tracking Codex token usage and estim
 - 改进 PowerShell 5.1 空配置文件处理，以及 Git Bash/WSL 下的 Windows 路径转换。
 - 更新终端表格布局：取消单元格额外留白，日期使用 `Mon DD` 短格式，模型名称按行展示，适合窄窗口。
 - 更新 GPT-5.6 Terra/Luna 的官方当前价格，并补充缓存写入价格回归测试。
+- 增加按 `token_count` 事件时间匹配历史价格的计费逻辑，并在表格最右侧增加 `Notes` 列标注官方价格变更日期。
 - 更新安装说明、迁移说明和 `MEMORY.md`，记录修复依据、展示调整与验证结果。
+
+### Important update summary
+
+- Historical cost is now calculated per `token_count` event timestamp instead of applying today's price to every historical session.
+- A session that crosses a price-change boundary can contain charges from both price versions; its total is the sum of event-level charges.
+- Daily, monthly, and session tables now end with a `Notes` column that marks `官方价格变更` on the effective local date.
+- The effective timestamp is configured explicitly as `2026-07-31T00:00:00Z` and can be revised in the pricing history when an official effective date is confirmed.
 
 ## 一句话交给 AI 部署 (复制粘贴即可)
 
@@ -90,12 +98,13 @@ ccusage-codex-open
   - 默认全量（除非你传入 `--since/--until`）
 
 输出表头（保持一致）：
-- 日/月：`Data | Models | Input | Cache | Write | Output | Reason | Total | Cost`
-- session：`Started | Session | Models | Input | Cache | Write | Output | Reason | Total | Cost`
+- 日/月：`Data | Models | Input | Cache | Write | Output | Reason | Total | Cost | Notes`
+- session：`Started | Session | Models | Input | Cache | Write | Output | Reason | Total | Cost | Notes`
 
 终端显示说明：
 - 日/月统计的日期显示为 `Jul 18` 形式，以减少日期列宽。
 - 同一行存在多个模型时，模型名称在 `Models` 列内分行，表格高度会随模型数量增加，但不会额外拉宽其它列。
+- `Notes` 列会在价格变更生效日期显示 `官方价格变更`；session 行只要覆盖该日期也会显示该备注。
 - 终端字号由 PowerShell、Windows Terminal 或其他终端程序控制；脚本通过减少字符留白和列宽来压缩表格占用空间。
 
 ### 依赖
@@ -117,7 +126,7 @@ node ccusage_m_view.js daily --json
 node ccusage_m_view.js monthly
 node ccusage_m_view.js sessions
 
-# 运行价格、fork 去重和紧凑表格回归检查
+# 运行历史价格、Notes、fork 去重和紧凑表格回归检查
 node test_pricing.js
 ```
 
@@ -148,8 +157,27 @@ node test_pricing.js
 Codex 2026-07-16：本工具面向 Codex 订阅用户时，GPT-5.6 按统一价格估算，不应用 API 长上下文加价；其他配置了长上下文价格的模型维持原规则。
 2026-07-31：依据 OpenAI 官方模型比较页更新 GPT-5.6 当前标准价格：Sol 为输入 `$5.00`、缓存读取 `$0.50`、输出 `$30.00`；Terra 为输入 `$2.00`、缓存读取 `$0.20`、输出 `$12.00`；Luna 为输入 `$0.20`、缓存读取 `$0.02`、输出 `$1.20`。GPT-5.6 缓存写入按未缓存输入价格的 1.25 倍计费，因此 Terra 写入为 `$2.50`，Luna 写入为 `$0.25`。
 价格来源：<https://developers.openai.com/api/docs/models/compare>。
+价格不会用当前值回算所有历史 session：脚本按每条 `token_count` 事件的时间戳选择价格。当前版本将新价格配置为从 `2026-07-31T00:00:00Z` 起生效，旧时间的 Terra/Luna 用此前价格；这是根据本次价格表更新日期设定的可调整生效点。
+输出表格最右侧的 `Notes` 会在对应的本地日期标记 `官方价格变更`，用于提醒当天及跨越该日期的 session 费用使用了价格版本切换。
 fork 子会话会在新 JSONL 文件开头复制父会话的历史 `token_count` 记录；脚本会通过 `forked_from_id` 和父子累计用量序列识别并跳过这段复制历史，只计入 fork 之后真实产生的调用。`--json` 输出中的 `stats.forkReplaySuppressed` 表示跳过的复制记录数。
 注意：价格表可能会随时间变化，建议你定期更新价格数据或在脚本里维护你自己的价格表。
+
+### 历史价格计费规则（重要）
+
+价格计算以每条有效的 `token_count` 事件为单位，而不是以 session 的创建日期或开始日期为单位。脚本会读取事件时间戳，选择该时间点适用的模型价格，再分别计算未缓存输入、缓存读取、缓存写入和输出费用，最后把所有事件费用相加。
+
+因此，若一个 session 从价格变更前持续到价格变更后，session 总费用会自然包含两个价格版本：变更前产生的 token 使用旧价格，变更后产生的 token 使用新价格。历史 JSONL 不需要迁移或重写，重新运行脚本即可按事件时间重新计算。
+
+当前价格历史配置如下（每 1M token，美元）：
+
+| 生效时间 | Terra | Luna | 说明 |
+| --- | --- | --- | --- |
+| `2026-07-31T00:00:00Z` 之前 | 输入 `$2.50`、缓存 `$0.25`、写入 `$3.125`、输出 `$15.00` | 输入 `$1.00`、缓存 `$0.10`、写入 `$1.25`、输出 `$6.00` | 历史价格 |
+| `2026-07-31T00:00:00Z` 起 | 输入 `$2.00`、缓存 `$0.20`、写入 `$2.50`、输出 `$12.00` | 输入 `$0.20`、缓存 `$0.02`、写入 `$0.25`、输出 `$1.20` | 当前价格 |
+
+Sol 的当前价格与历史配置一致，其他模型继续使用原有价格规则。上表中的生效时间是当前仓库的明确配置假设，不等同于官方页面自动提供的历史版本时间；如果官方后续确认了不同生效时刻，应调整 `ccusage_m_view.js` 中的 `PRICING_HISTORY` 和 `PRICING_CHANGE_EVENTS`。
+
+`Notes` 使用命令行的 `--timezone` 将生效时间转换为本地日期：daily/monthly 行在对应日期显示 `官方价格变更`，session 行只要包含该日期的有效事件也会显示该备注，Totals 行使用 `-`。JSON 输出中的每个汇总行也会保留 `notes` 字段。
 
 #### fork 修复验证
 
@@ -193,6 +221,10 @@ This repo contains a local Node.js script (`ccusage_m_view.js`) that rebuilds Co
   - “Open sessions” is defined as sessions under `~/.codex/sessions` only (does not include `archived_sessions`).
   - Full-range by default unless you pass filters.
 
+Output headers:
+- Daily/monthly: `Data | Models | Input | Cache | Write | Output | Reason | Total | Cost | Notes`
+- Sessions: `Started | Session | Models | Input | Cache | Write | Output | Reason | Total | Cost | Notes`
+
 ### Requirements
 
 - Node.js >= 20 (20.19.4+ recommended)
@@ -234,8 +266,28 @@ Both installers:
 Cost is computed using an internal price table. Prices can change; keep your table updated if you rely on cost accuracy.
 `Cache` means cached-input reads, and `Write` means cache writes. If local Codex logs do not expose cache-write fields, `Write` is shown as `0.000M`.
 As of 2026-07-31, the current GPT-5.6 standard prices are: Sol `$5.00` input, `$0.50` cached input, `$30.00` output; Terra `$2.00`, `$0.20`, `$12.00`; Luna `$0.20`, `$0.02`, `$1.20`. GPT-5.6 cache writes are billed at 1.25x the uncached input price, so Terra writes cost `$2.50` and Luna writes cost `$0.25` per 1M tokens. Source: <https://developers.openai.com/api/docs/models/compare>.
+Prices are selected per `token_count` event timestamp, so historical Terra/Luna usage keeps the earlier price instead of being recalculated with today's price. This version assumes the updated prices became effective at `2026-07-31T00:00:00Z`; adjust that explicit effective timestamp when an official effective date is known.
+
+### Historical pricing calculation (important)
+
+Pricing is resolved for each valid `token_count` event, not for the session's creation or start date. The script uses the event timestamp to select the applicable model price, calculates uncached input, cached reads, cache writes, and output separately, then sums the event-level charges.
+
+If one session crosses a pricing boundary, its total can legitimately contain both price versions: events before the boundary use the historical price, and events after the boundary use the current price. Existing JSONL files do not need to be migrated or rewritten; rerunning the script recalculates them from their event timestamps.
+
+The configured Terra/Luna history is shown below in USD per 1M tokens:
+
+| Effective time | Terra | Luna | Meaning |
+| --- | --- | --- | --- |
+| Before `2026-07-31T00:00:00Z` | Input `$2.50`, cached `$0.25`, write `$3.125`, output `$15.00` | Input `$1.00`, cached `$0.10`, write `$1.25`, output `$6.00` | Historical price |
+| From `2026-07-31T00:00:00Z` | Input `$2.00`, cached `$0.20`, write `$2.50`, output `$12.00` | Input `$0.20`, cached `$0.02`, write `$0.25`, output `$1.20` | Current price |
+
+Sol's current price is unchanged, and other models continue to use their existing pricing rules.
+
+The repository currently assumes `2026-07-31T00:00:00Z` as the effective timestamp for the latest Terra/Luna prices. This is an explicit configuration assumption rather than an automatically versioned historical record; update `PRICING_HISTORY` and `PRICING_CHANGE_EVENTS` if an official effective timestamp is confirmed.
+
+The `Notes` value is converted to the local date selected by `--timezone`. Daily and monthly rows show `官方价格变更` on the effective date, session rows show it when they contain a counted event on that date, Totals rows show `-`, and JSON summary rows expose the aggregated `notes` field.
 
 ### Terminal display
 
-Daily and monthly dates use the compact `Mon DD` format. Multiple model names are rendered on separate lines inside the `Models` column, allowing the table to grow vertically without unnecessarily widening the terminal output. Cell padding and common column caps are reduced for narrow panes. JSON output and accounting behavior are unchanged.
+Daily and monthly dates use the compact `Mon DD` format. Multiple model names are rendered on separate lines inside the `Models` column, allowing the table to grow vertically without unnecessarily widening the terminal output. The rightmost `Notes` column marks `官方价格变更` on the effective local date, and session rows show it when they cover that date. Cell padding and common column caps are reduced for narrow panes. JSON output and accounting behavior are unchanged.
 

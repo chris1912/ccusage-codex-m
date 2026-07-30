@@ -24,6 +24,7 @@ const USAGE_TABLE_CAPS = {
   Reason: 9,
   Total: 9,
   Cost: 9,
+  Notes: 12,
 };
 const SESSION_TABLE_CAPS = {
   Started: 18,
@@ -36,6 +37,7 @@ const SESSION_TABLE_CAPS = {
   Reason: 9,
   Total: 9,
   Cost: 9,
+  Notes: 12,
 };
 
 // 每 100 万 token 的美元价格。
@@ -73,6 +75,22 @@ const PRICING_PER_M = {
   'openrouter/free': { input: 0.0, cache: 0.0, output: 0.0 },
 };
 
+// Codex 2026-07-31：价格按 token_count 事件时间选择，避免历史 session 使用当前价格重算。
+const PRICING_HISTORY = {
+  'gpt-5.6-terra': [
+    { effectiveFrom: '1970-01-01T00:00:00.000Z', pricing: { input: 2.5, cache: 0.25, cacheWrite: 3.125, output: 15.0 } },
+    { effectiveFrom: '2026-07-31T00:00:00.000Z', pricing: PRICING_PER_M['gpt-5.6-terra'] },
+  ],
+  'gpt-5.6-luna': [
+    { effectiveFrom: '1970-01-01T00:00:00.000Z', pricing: { input: 1.0, cache: 0.1, cacheWrite: 1.25, output: 6.0 } },
+    { effectiveFrom: '2026-07-31T00:00:00.000Z', pricing: PRICING_PER_M['gpt-5.6-luna'] },
+  ],
+};
+
+const PRICING_CHANGE_EVENTS = [
+  { effectiveFrom: '2026-07-31T00:00:00.000Z', note: '官方价格变更' },
+];
+
 const MODEL_ALIASES = {
   'gpt-5.2-codex-latest': 'gpt-5.2-codex',
   'gpt-5.3-chat': 'gpt-5.2',
@@ -92,11 +110,36 @@ function isFreeModel(modelName) {
   return normalized === 'openrouter/free' || (normalized.startsWith('openrouter/') && normalized.endsWith(':free'));
 }
 
-function getPricing(modelName) {
+function getPricing(modelName, timestamp) {
   if (!modelName) return null;
   if (isFreeModel(modelName)) return PRICING_PER_M['openrouter/free'];
   const normalized = normalizeModelName(modelName);
-  return PRICING_PER_M[normalized] || PRICING_PER_M[MODEL_ALIASES[normalized]] || null;
+  const pricingKey = PRICING_PER_M[normalized] ? normalized : MODEL_ALIASES[normalized];
+  if (!pricingKey) return null;
+  const history = PRICING_HISTORY[pricingKey];
+  if (!history) return PRICING_PER_M[pricingKey];
+  const eventTime = Date.parse(String(timestamp || ''));
+  if (!Number.isFinite(eventTime)) return PRICING_PER_M[pricingKey];
+
+  let selected = history[0].pricing;
+  for (const entry of history) {
+    const effectiveTime = Date.parse(entry.effectiveFrom);
+    if (Number.isFinite(effectiveTime) && eventTime >= effectiveTime) selected = entry.pricing;
+  }
+  return selected;
+}
+
+function getPricingChangeNotes(timestamp, timezone) {
+  const eventTime = Date.parse(String(timestamp || ''));
+  if (!Number.isFinite(eventTime)) return [];
+  const eventDate = toDateKey(timestamp, timezone);
+  return PRICING_CHANGE_EVENTS
+    .filter((change) => {
+      const effectiveTime = Date.parse(change.effectiveFrom);
+      const effectiveDate = toDateKey(change.effectiveFrom, timezone);
+      return Number.isFinite(effectiveTime) && eventTime >= effectiveTime && eventDate === effectiveDate;
+    })
+    .map((change) => change.note);
 }
 
 function ensureNumber(value) {
@@ -608,6 +651,7 @@ function createSummaryForMode(key, event) {
     reasoningOutputTokens: 0,
     totalTokens: 0,
     costUSD: 0,
+    notes: new Set(),
     models: new Map(),
     sessionId: event.sessionId,
   };
@@ -638,6 +682,7 @@ function buildGroupedReport(events, options) {
     }
 
     addUsage(summary, event);
+    for (const note of getPricingChangeNotes(event.timestamp, options.timezone)) summary.notes.add(note);
     if (new Date(event.timestamp).getTime() < new Date(summary.firstTimestamp).getTime()) {
       summary.firstTimestamp = event.timestamp;
     }
@@ -650,7 +695,7 @@ function buildGroupedReport(events, options) {
     addUsage(modelUsage, event);
     if (event.isFallbackModel === true) modelUsage.isFallback = true;
 
-    const pricing = getPricing(modelName);
+    const pricing = getPricing(modelName, event.timestamp);
     if (pricing == null) {
       unknownModels.add(normalizeModelName(modelName) || modelName);
     } else {
@@ -681,6 +726,7 @@ function buildGroupedReport(events, options) {
           reasoningOutputTokens: summary.reasoningOutputTokens,
           totalTokens: summary.totalTokens,
           costUSD: summary.costUSD,
+          notes: Array.from(summary.notes).join(', '),
           models: rowModels,
         };
       }
@@ -702,6 +748,7 @@ function buildGroupedReport(events, options) {
           reasoningOutputTokens: summary.reasoningOutputTokens,
           totalTokens: summary.totalTokens,
           costUSD: summary.costUSD,
+          notes: Array.from(summary.notes).join(', '),
           models: rowModels,
         };
       }
@@ -716,6 +763,7 @@ function buildGroupedReport(events, options) {
         reasoningOutputTokens: summary.reasoningOutputTokens,
         totalTokens: summary.totalTokens,
         costUSD: summary.costUSD,
+        notes: Array.from(summary.notes).join(', '),
         models: rowModels,
       };
     });
@@ -805,7 +853,7 @@ function renderTable(headers, rows, caps) {
 
 function renderUsageTable(mode, rows, totals) {
   if (mode === 'sessions') {
-    const headers = ['Started', 'Session', 'Models', 'Input', 'Cache', 'Write', 'Output', 'Reason', 'Total', 'Cost'];
+    const headers = ['Started', 'Session', 'Models', 'Input', 'Cache', 'Write', 'Output', 'Reason', 'Total', 'Cost', 'Notes'];
     const printableRows = rows.map((row) => ({
       Started: row.started,
       Session: row.sessionId,
@@ -817,6 +865,7 @@ function renderUsageTable(mode, rows, totals) {
       Reason: m(row.reasoningOutputTokens || 0),
       Total: m(row.totalTokens || 0),
       Cost: usd(row.costUSD || 0),
+      Notes: row.notes || '',
     }));
     renderTable(headers, printableRows, SESSION_TABLE_CAPS);
     console.log('Totals');
@@ -831,11 +880,12 @@ function renderUsageTable(mode, rows, totals) {
       Reason: m(totals.reasoningOutputTokens || 0),
       Total: m(totals.totalTokens || 0),
       Cost: usd(totals.costUSD || 0),
+      Notes: '-',
     }], SESSION_TABLE_CAPS);
     return;
   }
 
-  const headers = ['Data', 'Models', 'Input', 'Cache', 'Write', 'Output', 'Reason', 'Total', 'Cost'];
+  const headers = ['Data', 'Models', 'Input', 'Cache', 'Write', 'Output', 'Reason', 'Total', 'Cost', 'Notes'];
   const printableRows = rows.map((row) => ({
     Data: mode === 'monthly' ? String(row.month || '') : String(row.date || ''),
     Models: Object.keys(row.models || {}).map(normalizeModelName).sort().join('\n'),
@@ -846,6 +896,7 @@ function renderUsageTable(mode, rows, totals) {
     Reason: m(row.reasoningOutputTokens || 0),
     Total: m(row.totalTokens || 0),
     Cost: usd(row.costUSD || 0),
+    Notes: row.notes || '',
   }));
 
   renderTable(headers, printableRows, USAGE_TABLE_CAPS);
@@ -860,6 +911,7 @@ function renderUsageTable(mode, rows, totals) {
     Reason: m(totals.reasoningOutputTokens || 0),
     Total: m(totals.totalTokens || 0),
     Cost: usd(totals.costUSD || 0),
+    Notes: '-',
   }], USAGE_TABLE_CAPS);
 }
 
