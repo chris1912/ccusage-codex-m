@@ -87,7 +87,8 @@ else
   echo "Updated profile: $rc_file"
 fi
 
-echo "Installed: $target"
+echo "Installed launcher: $target"
+echo "Source:           $script_src"
 echo "Next:"
 echo "  1) source \"$rc_file\""
 echo "  2) ccusage-codex-m"
