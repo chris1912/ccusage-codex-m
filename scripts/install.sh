@@ -29,16 +29,29 @@ if command -v cygpath >/dev/null 2>&1; then
 fi
 
 target="$codex_home/ccusage_m_view.js"
+source_pointer="$codex_home/ccusage_m_view.repo"
 if [[ -f "$target" ]]; then
   cp -f "$target" "$target.bak-$(date +%Y%m%d_%H%M%S)"
+fi
+if [[ -f "$source_pointer" ]]; then
+  cp -f "$source_pointer" "$source_pointer.bak-$(date +%Y%m%d_%H%M%S)"
+fi
+repo_root_for_node="$repo_root"
+if command -v cygpath >/dev/null 2>&1; then
+  repo_root_for_node="$(cygpath -m "$repo_root")"
 fi
 # 只安装入口，实际逻辑始终从仓库源文件加载，避免 Git 更新后运行旧副本。
 printf '%s\n' \
   "'use strict';" \
+  "const fs = require('fs');" \
   "const path = require('path');" \
-  'const repoRoot = process.env.CCUSAGE_CODEX_REPO;' \
-  "if (!repoRoot) throw new Error('CCUSAGE_CODEX_REPO is not configured; reload the shell profile.');" \
+  "const pointer = path.join(__dirname, 'ccusage_m_view.repo');" \
+  'const envRoot = process.env.CCUSAGE_CODEX_REPO;' \
+  "const fileRoot = fs.existsSync(pointer) ? fs.readFileSync(pointer, 'utf8').trim() : '';" \
+  "const repoRoot = [envRoot, fileRoot].find((root) => root && fs.existsSync(path.join(root, 'ccusage_m_view.js')));" \
+  "if (!repoRoot) throw new Error('ccusage-codex-m source repository was not found. Re-run the installer.');" \
   "require(path.join(repoRoot, 'ccusage_m_view.js'));" > "$target"
+printf '%s\n' "$repo_root_for_node" > "$source_pointer"
 
 choose_rc() {
   if [[ -f "$HOME/.zshrc" ]]; then
@@ -74,10 +87,10 @@ if grep -qF "$begin" "$rc_file" && grep -qF "$end" "$rc_file"; then
     tmp="$(mktemp)"
     # Replace existing block between begin/end (inclusive).
     awk -v b="$begin" -v e="$end" -v repl="$block" '
-      BEGIN { in=0 }
-      $0==b { print repl; in=1; next }
-      $0==e { in=0; next }
-      in==0 { print }
+      BEGIN { inside_block=0 }
+      $0==b { print repl; inside_block=1; next }
+      $0==e { inside_block=0; next }
+      inside_block==0 { print }
     ' "$rc_file" > "$tmp"
     mv "$tmp" "$rc_file"
     echo "Replaced $marker block in: $rc_file"
@@ -89,6 +102,7 @@ fi
 
 echo "Installed launcher: $target"
 echo "Source:           $script_src"
+echo "Source pointer:   $source_pointer"
 echo "Next:"
 echo "  1) source \"$rc_file\""
 echo "  2) ccusage-codex-m"

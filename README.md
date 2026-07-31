@@ -52,7 +52,7 @@ ccusage-codex-open
 说明：
 - 安装脚本会在你的 `CODEX_HOME`（默认 `C:\Users\<你>\.codex`）写入一个 launcher，并修改 `$PROFILE` 写入函数定义；launcher 始终加载当前仓库中的 `ccusage_m_view.js`，不会再复制一份独立运行副本。
 - 脚本会自动对被修改的文件做 `*.bak-YYYYMMDD_HHMMSS` 备份。
-- 首次安装后，进入仓库执行 `git pull` 即可让命令使用新版本；只有仓库移动到新路径时才需要重新运行安装脚本。
+- 首次安装后，进入仓库执行 `git pull` 即可让命令使用新版本；只有仓库移动到新路径时才需要重新运行安装脚本。launcher 会通过 `CCUSAGE_CODEX_REPO` 或 `CODEX_HOME/ccusage_m_view.repo` 找到源仓库。
 
 如果你的环境里 `powershell` 命令不可用，可以改用 `powershell.exe`：
 
@@ -294,7 +294,7 @@ The repository currently assumes `2026-07-31T00:00:00Z` as the effective timesta
 
 ### Single source of truth
 
-The installers do not keep a second full copy of the accounting script. They place a small launcher in `CODEX_HOME` and configure the shell commands to execute that launcher, which loads the repository file. After the initial installation, use `git pull` in the repository and the installed commands will immediately use the pulled code. Re-run the installer only after moving the repository or changing `CODEX_HOME`.
+The installers do not keep a second full copy of the accounting script. They place a small launcher and a source pointer file in `CODEX_HOME`; the launcher loads the repository file from `CCUSAGE_CODEX_REPO` or that pointer file. After the initial installation, use `git pull` in the repository and the installed commands will immediately use the pulled code. Re-run the installer only after moving the repository or changing `CODEX_HOME`.
 
 The `Notes` value is converted to the local date selected by `--timezone`. Daily and monthly rows show `官方价格变更` on the effective date, session rows show it when they contain a counted event on that date, Totals rows show `-`, and JSON summary rows expose the aggregated `notes` field.
 

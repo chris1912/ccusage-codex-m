@@ -33,7 +33,7 @@ The GPT-5.5, GPT-5.4, and other legacy GPT-5 entries remain unchanged. GPT-5.6 c
 
 ## 2026-07-31 Single Source of Truth Installation
 
-The installers now place a small launcher at `CODEX_HOME/ccusage_m_view.js` instead of copying the full accounting script. The launcher loads the repository's `ccusage_m_view.js` through the generated `CCUSAGE_CODEX_REPO` environment variable, and the generated PowerShell/Git Bash commands continue to call the launcher. After the initial install, `git pull` updates the code used by the commands; rerun the installer only when the repository path or `CODEX_HOME` changes.
+The installers now place a small launcher at `CODEX_HOME/ccusage_m_view.js` and a `ccusage_m_view.repo` source pointer instead of copying the full accounting script. The launcher loads the repository's `ccusage_m_view.js` through `CCUSAGE_CODEX_REPO` or the pointer file, and the generated PowerShell/Git Bash commands continue to call the launcher. After the initial install, `git pull` updates the code used by the commands; rerun the installer only when the repository path or `CODEX_HOME` changes.
 
 Codex 2026-07-16：按主人要求，本工具定位为 Codex 订阅用户的本地金额估算，不采用 API 长上下文加价。GPT-5.6 对所有请求使用统一价格；GPT-5.4 和 GPT-5.5 的既有配置保持不变。
 

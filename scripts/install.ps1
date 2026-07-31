@@ -90,14 +90,21 @@ if (-not (Test-Path -LiteralPath $codexHomeResolved)) {
 
 $targetScript = Join-Path $codexHomeResolved "ccusage_m_view.js"
 $bakScript = Backup-FileIfExists -Path $targetScript
+$sourcePointer = Join-Path $codexHomeResolved "ccusage_m_view.repo"
+$bakSourcePointer = Backup-FileIfExists -Path $sourcePointer
 # 只安装入口，实际逻辑始终从仓库源文件加载，避免 Git 更新后运行旧副本。
 $newline = [Environment]::NewLine
 $launcher = "'use strict';" + $newline +
+  "const fs = require('fs');" + $newline +
   "const path = require('path');" + $newline +
-  "const repoRoot = process.env.CCUSAGE_CODEX_REPO;" + $newline +
-  "if (!repoRoot) throw new Error('CCUSAGE_CODEX_REPO is not configured; reload the shell profile.');" + $newline +
+  "const pointer = path.join(__dirname, 'ccusage_m_view.repo');" + $newline +
+  "const envRoot = process.env.CCUSAGE_CODEX_REPO;" + $newline +
+  "const fileRoot = fs.existsSync(pointer) ? fs.readFileSync(pointer, 'utf8').trim() : '';" + $newline +
+  "const repoRoot = [envRoot, fileRoot].find((root) => root && fs.existsSync(path.join(root, 'ccusage_m_view.js')));" + $newline +
+  "if (!repoRoot) throw new Error('ccusage-codex-m source repository was not found. Re-run the installer.');" + $newline +
   "require(path.join(repoRoot, 'ccusage_m_view.js'));"
 Set-Content -LiteralPath $targetScript -Value $launcher -Encoding utf8
+Set-Content -LiteralPath $sourcePointer -Value $repoRoot -Encoding utf8
 
 $profilePath = $PROFILE
 Ensure-ProfileFile -ProfilePath $profilePath
@@ -124,7 +131,9 @@ $profileStatus = Ensure-BlockInProfile -ProfilePath $profilePath -MarkerId $mark
 
 Write-Host "Installed launcher: $targetScript"
 Write-Host "Source:           $scriptPath"
+Write-Host "Source pointer:   $sourcePointer"
 if ($bakScript) { Write-Host "Backup:   $bakScript" }
+if ($bakSourcePointer) { Write-Host "Pointer backup:   $bakSourcePointer" }
 Write-Host "Updated profile: $profilePath ($profileStatus)"
 if ($bakProfile) { Write-Host "Profile backup:  $bakProfile" }
 Write-Host ""
