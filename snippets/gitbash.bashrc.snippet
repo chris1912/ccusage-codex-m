@@ -6,14 +6,19 @@ fi
 
 export CODEX_HOME="$codex_home"
 
+if [[ -z "${CCUSAGE_CODEX_REPO:-}" || ! -f "$CCUSAGE_CODEX_REPO/ccusage_m_view.js" ]]; then
+  echo "Set CCUSAGE_CODEX_REPO to the local ccusage-codex-m repository before loading this snippet." >&2
+  return 1
+fi
+
 ccusage-codex-m() {
-  node "$codex_home/ccusage_m_view.js" daily "$@"
+  node "$CCUSAGE_CODEX_REPO/ccusage_m_view.js" daily "$@"
 }
 
 ccusage-codex-monthly() {
-  node "$codex_home/ccusage_m_view.js" monthly "$@"
+  node "$CCUSAGE_CODEX_REPO/ccusage_m_view.js" monthly "$@"
 }
 
 ccusage-codex-open() {
-  node "$codex_home/ccusage_m_view.js" sessions "$@"
+  node "$CCUSAGE_CODEX_REPO/ccusage_m_view.js" sessions "$@"
 }

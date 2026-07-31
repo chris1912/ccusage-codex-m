@@ -31,6 +31,10 @@ The GPT-5.5, GPT-5.4, and other legacy GPT-5 entries remain unchanged. GPT-5.6 c
 
 `PRICING_CHANGE_EVENTS` feeds the rightmost `Notes` column. Daily and monthly rows show `官方价格变更` on the effective local date, while a session row shows it if any counted event in that session falls on that date. JSON rows also expose the aggregated `notes` value.
 
+## 2026-07-31 Single Source of Truth Installation
+
+The installers now place a small launcher at `CODEX_HOME/ccusage_m_view.js` instead of copying the full accounting script. The launcher loads the repository's `ccusage_m_view.js` through the generated `CCUSAGE_CODEX_REPO` environment variable, and the generated PowerShell/Git Bash commands continue to call the launcher. After the initial install, `git pull` updates the code used by the commands; rerun the installer only when the repository path or `CODEX_HOME` changes.
+
 Codex 2026-07-16：按主人要求，本工具定位为 Codex 订阅用户的本地金额估算，不采用 API 长上下文加价。GPT-5.6 对所有请求使用统一价格；GPT-5.4 和 GPT-5.5 的既有配置保持不变。
 
 2026-07-12 的固定会话快照比较结果保留作为回归依据：带长上下文加价时合计 `$123.617830`，统一价格时合计 `$96.983890`，减少 `$26.633939`（`21.55%`）。

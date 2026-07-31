@@ -12,6 +12,7 @@ A local script + shell command snippets for tracking Codex token usage and estim
 - 更新终端表格布局：取消单元格额外留白，日期使用 `Mon DD` 短格式，模型名称按行展示，适合窄窗口。
 - 更新 GPT-5.6 Terra/Luna 的官方当前价格，并补充缓存写入价格回归测试。
 - 增加按 `token_count` 事件时间匹配历史价格的计费逻辑，并在表格最右侧增加 `Notes` 列标注官方价格变更日期。
+- 改造安装方式：`CODEX_HOME` 中只保留指向仓库源文件的 launcher，避免本地运行副本与 GitHub 仓库分叉。
 - 更新安装说明、迁移说明和 `MEMORY.md`，记录修复依据、展示调整与验证结果。
 
 ### Important update summary
@@ -49,8 +50,9 @@ ccusage-codex-open
 ```
 
 说明：
-- 安装脚本会把 `ccusage_m_view.js` 复制到你的 `CODEX_HOME`（默认 `C:\Users\<你>\.codex`），并修改 `$PROFILE` 写入函数定义。
+- 安装脚本会在你的 `CODEX_HOME`（默认 `C:\Users\<你>\.codex`）写入一个 launcher，并修改 `$PROFILE` 写入函数定义；launcher 始终加载当前仓库中的 `ccusage_m_view.js`，不会再复制一份独立运行副本。
 - 脚本会自动对被修改的文件做 `*.bak-YYYYMMDD_HHMMSS` 备份。
+- 首次安装后，进入仓库执行 `git pull` 即可让命令使用新版本；只有仓库移动到新路径时才需要重新运行安装脚本。
 
 如果你的环境里 `powershell` 命令不可用，可以改用 `powershell.exe`：
 
@@ -148,6 +150,8 @@ node test_pricing.js
 - `ccusage-codex-monthly`：monthly
 - `ccusage-codex-open`：sessions（仅 `~/.codex/sessions`）
 
+安装器会同时设置 `CCUSAGE_CODEX_REPO`，用于让 launcher 找到仓库源文件；如果手动加载 snippets，请先把这个环境变量设为本地仓库根目录。
+
 你也可以用 `apply_changes.ps1` 来把脚本/片段复制到机器的预期位置（根据你自己的路径自行调整）。
 
 ### 计费说明
@@ -203,7 +207,7 @@ ccusage-codex-m --json
 node test_pricing.js
 ```
 
-如果 Codex 数据目录不是默认位置，替换 `-CodexHome`；Git Bash/WSL 使用 `CODEX_HOME="/path/to/.codex" bash scripts/install.sh`。更新代码后重新运行安装命令即可同步运行时脚本，安装器会自动备份旧脚本和 shell 配置。
+如果 Codex 数据目录不是默认位置，替换 `-CodexHome`；Git Bash/WSL 使用 `CODEX_HOME="/path/to/.codex" bash scripts/install.sh`。首次安装后更新仓库代码不需要再次复制脚本，安装器会自动备份旧入口和 shell 配置；如果仓库移动到新路径，再重新运行安装命令即可。
 
 ## English
 
@@ -252,14 +256,17 @@ They define:
 - `ccusage-codex-monthly`
 - `ccusage-codex-open` (sessions under `~/.codex/sessions`)
 
+The installer also sets `CCUSAGE_CODEX_REPO`, which lets the launcher locate the repository source. If you load a snippet manually, set this variable to the local repository root first.
+
 ### Quick install scripts
 
 - Windows PowerShell: `scripts/install.ps1`
 - bash/zsh (Git Bash/WSL): `scripts/install.sh`
 
 Both installers:
-- Copy `ccusage_m_view.js` into your `CODEX_HOME` (default: `~/.codex`)
+- Install a small launcher into `CODEX_HOME` (default: `~/.codex`) that always loads the repository's `ccusage_m_view.js`
 - Append a marked block to your shell profile, with timestamped backups
+- Keep the repository as the single source of truth, so pulling new commits updates the commands without copying another script
 
 ### Pricing note
 
@@ -284,6 +291,10 @@ The configured Terra/Luna history is shown below in USD per 1M tokens:
 Sol's current price is unchanged, and other models continue to use their existing pricing rules.
 
 The repository currently assumes `2026-07-31T00:00:00Z` as the effective timestamp for the latest Terra/Luna prices. This is an explicit configuration assumption rather than an automatically versioned historical record; update `PRICING_HISTORY` and `PRICING_CHANGE_EVENTS` if an official effective timestamp is confirmed.
+
+### Single source of truth
+
+The installers do not keep a second full copy of the accounting script. They place a small launcher in `CODEX_HOME` and configure the shell commands to execute that launcher, which loads the repository file. After the initial installation, use `git pull` in the repository and the installed commands will immediately use the pulled code. Re-run the installer only after moving the repository or changing `CODEX_HOME`.
 
 The `Notes` value is converted to the local date selected by `--timezone`. Daily and monthly rows show `官方价格变更` on the effective date, session rows show it when they contain a counted event on that date, Totals rows show `-`, and JSON summary rows expose the aggregated `notes` field.
 
