@@ -1,6 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
+const { StringDecoder } = require('string_decoder');
 
 const MILLION = 1_000_000;
 const LONG_CONTEXT_THRESHOLD = 272_000;
@@ -44,9 +45,16 @@ const SESSION_TABLE_CAPS = {
 // Codex 2026-07-16：GPT-5.6 面向订阅用户按统一价格估算；其他含 Above 字段的模型维持既有规则。
 // reasoningOutputTokens 仅展示，不单独计费，因为价格口径为输入、缓存和输出。
 const PRICING_PER_M = {
+  // Codex 2026-09-30：GPT-6.1 Sol 缓存读取为输入价格的 5%，订阅估算继续使用统一价格。
+  'gpt-6.1-sol': { input: 2.0, cache: 0.1, cacheWrite: 2.5, output: 10.0 },
+  // Codex 2026-09-23：GPT-6 使用官方 Standard 短上下文价格；订阅估算维持统一价格。
+  'gpt-6-astra': { input: 10.0, cache: 1.0, cacheWrite: 12.5, output: 50.0 },
+  'gpt-6-sol': { input: 2.0, cache: 0.2, cacheWrite: 2.5, output: 10.0 },
+  'gpt-6-luna': { input: 0.1, cache: 0.01, cacheWrite: 0.125, output: 0.5 },
   // Codex 2026-07-31：依据 OpenAI 官方模型比较页更新 GPT-5.6 Terra/Luna 当前标准价格。
   // GPT-5.6 缓存写入按未缓存输入价格的 1.25 倍计算；Codex 订阅估算不应用 API 长上下文加价。
-  'gpt-5.6-sol': { input: 5.0, cache: 0.5, cacheWrite: 6.25, output: 30.0 },
+  // Codex 2026-09-30：Sol 采用 2026-08-21 起的官方促销价，旧价格保存在 PRICING_HISTORY。
+  'gpt-5.6-sol': { input: 4.0, cache: 0.4, cacheWrite: 5.0, output: 20.0 },
   'gpt-5.6-terra': { input: 2.0, cache: 0.2, cacheWrite: 2.5, output: 12.0 },
   'gpt-5.6-luna': { input: 0.2, cache: 0.02, cacheWrite: 0.25, output: 1.2 },
   'gpt-5.5': { input: 5.0, cache: 0.5, output: 30.0, inputAbove: 10.0, cacheAbove: 1.0, outputAbove: 45.0 },
@@ -77,6 +85,11 @@ const PRICING_PER_M = {
 
 // Codex 2026-07-31：价格按 token_count 事件时间选择，避免历史 session 使用当前价格重算。
 const PRICING_HISTORY = {
+  // Codex 2026-09-30：官方仅公布降价日期，生效时刻按该日 UTC 00:00 配置。
+  'gpt-5.6-sol': [
+    { effectiveFrom: '1970-01-01T00:00:00.000Z', pricing: { input: 5.0, cache: 0.5, cacheWrite: 6.25, output: 30.0 } },
+    { effectiveFrom: '2026-08-21T00:00:00.000Z', pricing: PRICING_PER_M['gpt-5.6-sol'] },
+  ],
   'gpt-5.6-terra': [
     { effectiveFrom: '1970-01-01T00:00:00.000Z', pricing: { input: 2.5, cache: 0.25, cacheWrite: 3.125, output: 15.0 } },
     { effectiveFrom: '2026-07-31T00:00:00.000Z', pricing: PRICING_PER_M['gpt-5.6-terra'] },
@@ -89,9 +102,12 @@ const PRICING_HISTORY = {
 
 const PRICING_CHANGE_EVENTS = [
   { effectiveFrom: '2026-07-31T00:00:00.000Z', note: '官方价格变更' },
+  { effectiveFrom: '2026-08-21T00:00:00.000Z', note: '官方价格变更' },
 ];
 
 const MODEL_ALIASES = {
+  // Codex 2026-09-30：官方 gpt-5.6 别名与 Sol 共用当前及历史价格。
+  'gpt-5.6': 'gpt-5.6-sol',
   'gpt-5.2-codex-latest': 'gpt-5.2-codex',
   'gpt-5.3-chat': 'gpt-5.2',
   'gpt-5.3-codex-latest': 'gpt-5.3-codex',
@@ -425,18 +441,48 @@ function* walkJsonlFiles(dir) {
 }
 
 /**
- * 读取并解析一个 JSONL 会话文件；坏行直接忽略，保持原统计逻辑的容错行为。
- * Codex 2026-07-17：先缓存解析结果，供 fork 父子序列核对和正式计费共用。
+ * Codex 2026-10-10：分块读取 UTF-8 JSONL，避免整份日志超过 Node 字符串长度上限。
+ * 解码器保留跨块的多字节字符，finally 保证读取失败或提前结束时关闭文件。
+ */
+function* readJsonlLines(file) {
+  const descriptor = fs.openSync(file, 'r');
+  const buffer = Buffer.alloc(1024 * 1024);
+  const decoder = new StringDecoder('utf8');
+  let pending = '';
+  try {
+    let bytesRead;
+    while ((bytesRead = fs.readSync(descriptor, buffer, 0, buffer.length, null)) > 0) {
+      pending += decoder.write(buffer.subarray(0, bytesRead));
+      let start = 0;
+      let newline;
+      while ((newline = pending.indexOf('\n', start)) !== -1) {
+        yield pending.slice(start, newline);
+        start = newline + 1;
+      }
+      pending = pending.slice(start);
+    }
+    pending += decoder.end();
+    if (pending) yield pending;
+  } finally {
+    fs.closeSync(descriptor);
+  }
+  return;
+}
+
+/**
+ * Codex 2026-10-10：逐行解析，只缓存统计和 fork 核对需要的记录，坏行仍忽略。
  */
 function readJsonlRecords(file) {
   const records = [];
-  const lines = fs.readFileSync(file, 'utf8').split(/\r?\n/);
-  for (const line of lines) {
+  for (const line of readJsonlLines(file)) {
     const trimmed = line.trim();
     if (!trimmed) continue;
     try {
       const record = JSON.parse(trimmed);
-      records.push(record);
+      if (record?.type === 'session_meta' || record?.type === 'turn_context' ||
+          (record?.type === 'event_msg' && record.payload?.type === 'token_count')) {
+        records.push(record);
+      }
     } catch {
       continue;
     }

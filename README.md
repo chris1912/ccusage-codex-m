@@ -3,6 +3,14 @@
 一个用于统计 Codex 本地会话用量与费用的脚本与命令集合。  
 A local script + shell command snippets for tracking Codex token usage and estimated cost.
 
+## 价格更新 / Pricing Update（2026-09-30）
+
+Codex 2026-09-30：新增 `gpt-6.1-sol`，每百万 token 的输入、缓存读取、缓存写入、输出价格分别为 `$2.00 / $0.10 / $2.50 / $10.00`；原 `gpt-6-sol` 缓存读取价格仍为 `$0.20`。GPT-5.6 Sol 自 2026-08-21 起使用促销价 `$4.00 / $0.40 / $5.00 / $20.00`，之前的事件保留旧价，`gpt-5.6` 别名也使用 Sol 的价格历史。官方只公布降价日期，脚本按 `2026-08-21T00:00:00Z` 配置生效时刻；促销至少持续到 2026-11-21，不预设到期后的价格。订阅估算继续使用统一价格，不应用 API 长上下文加价。
+
+Codex 2026-09-30: Added `gpt-6.1-sol` at `$2.00 / $0.10 / $2.50 / $10.00` per 1M tokens for input, cached reads, cache writes, and output; the original `gpt-6-sol` cached-read rate remains `$0.20`. GPT-5.6 Sol uses promotional rates of `$4.00 / $0.40 / $5.00 / $20.00` from 2026-08-21, preserving earlier event prices; the `gpt-5.6` alias shares Sol's pricing history. Only the date is officially published, so the script assumes `2026-08-21T00:00:00Z` as the effective time. The promotion lasts at least through 2026-11-21; no subsequent rate is assumed. Subscription estimates continue using uniform rates without the API long-context surcharge.
+
+来源 / Sources: [OpenAI Pricing](https://developers.openai.com/api/docs/pricing), [OpenAI Changelog](https://developers.openai.com/api/docs/changelog).
+
 ## 重要更新 / Important Update（2026-07-31）
 
 - 修复 fork 子会话复制父历史 `token_count` 导致的重复计费；新增 `stats.forkReplaySuppressed` 统计。
@@ -160,6 +168,7 @@ node test_pricing.js
 `Cache` 表示缓存读取 token，`Write` 表示缓存写入 token；如果 Codex 本地日志未暴露缓存写入字段，`Write` 会显示为 `0.000M`。
 Codex 2026-07-16：本工具面向 Codex 订阅用户时，GPT-5.6 按统一价格估算，不应用 API 长上下文加价；其他配置了长上下文价格的模型维持原规则。
 2026-07-31：依据 OpenAI 官方模型比较页更新 GPT-5.6 当前标准价格：Sol 为输入 `$5.00`、缓存读取 `$0.50`、输出 `$30.00`；Terra 为输入 `$2.00`、缓存读取 `$0.20`、输出 `$12.00`；Luna 为输入 `$0.20`、缓存读取 `$0.02`、输出 `$1.20`。GPT-5.6 缓存写入按未缓存输入价格的 1.25 倍计费，因此 Terra 写入为 `$2.50`，Luna 写入为 `$0.25`。
+2026-09-23：新增 GPT-6 Standard 价格（每百万 token，依次为输入、缓存读取、缓存写入、输出）：Astra `$10.00`、`$1.00`、`$12.50`、`$50.00`；Sol `$2.00`、`$0.20`、`$2.50`、`$10.00`；Luna `$0.10`、`$0.01`、`$0.125`、`$0.50`。Codex 订阅估算沿用统一价格，不应用 API 长上下文加价。来源：<https://developers.openai.com/api/docs/pricing>。
 价格来源：<https://developers.openai.com/api/docs/models/compare>。
 价格不会用当前值回算所有历史 session：脚本按每条 `token_count` 事件的时间戳选择价格。当前版本将新价格配置为从 `2026-07-31T00:00:00Z` 起生效，旧时间的 Terra/Luna 用此前价格；这是根据本次价格表更新日期设定的可调整生效点。
 输出表格最右侧的 `Notes` 会在对应的本地日期标记 `官方价格变更`，用于提醒当天及跨越该日期的 session 费用使用了价格版本切换。
@@ -273,6 +282,7 @@ Both installers:
 Cost is computed using an internal price table. Prices can change; keep your table updated if you rely on cost accuracy.
 `Cache` means cached-input reads, and `Write` means cache writes. If local Codex logs do not expose cache-write fields, `Write` is shown as `0.000M`.
 As of 2026-07-31, the current GPT-5.6 standard prices are: Sol `$5.00` input, `$0.50` cached input, `$30.00` output; Terra `$2.00`, `$0.20`, `$12.00`; Luna `$0.20`, `$0.02`, `$1.20`. GPT-5.6 cache writes are billed at 1.25x the uncached input price, so Terra writes cost `$2.50` and Luna writes cost `$0.25` per 1M tokens. Source: <https://developers.openai.com/api/docs/models/compare>.
+As of 2026-09-23, GPT-6 Standard prices per 1M tokens (input, cached read, cache write, output) are: Astra `$10.00`, `$1.00`, `$12.50`, `$50.00`; Sol `$2.00`, `$0.20`, `$2.50`, `$10.00`; Luna `$0.10`, `$0.01`, `$0.125`, `$0.50`. Codex subscription estimates use these uniform rates without the API long-context surcharge. Source: <https://developers.openai.com/api/docs/pricing>.
 Prices are selected per `token_count` event timestamp, so historical Terra/Luna usage keeps the earlier price instead of being recalculated with today's price. This version assumes the updated prices became effective at `2026-07-31T00:00:00Z`; adjust that explicit effective timestamp when an official effective date is known.
 
 ### Historical pricing calculation (important)
@@ -288,7 +298,7 @@ The configured Terra/Luna history is shown below in USD per 1M tokens:
 | Before `2026-07-31T00:00:00Z` | Input `$2.50`, cached `$0.25`, write `$3.125`, output `$15.00` | Input `$1.00`, cached `$0.10`, write `$1.25`, output `$6.00` | Historical price |
 | From `2026-07-31T00:00:00Z` | Input `$2.00`, cached `$0.20`, write `$2.50`, output `$12.00` | Input `$0.20`, cached `$0.02`, write `$0.25`, output `$1.20` | Current price |
 
-Sol's current price is unchanged, and other models continue to use their existing pricing rules.
+At the 2026-07-31 update, Sol's price was unchanged. The 2026-09-30 update above adds Sol's 2026-08-21 promotional pricing history.
 
 The repository currently assumes `2026-07-31T00:00:00Z` as the effective timestamp for the latest Terra/Luna prices. This is an explicit configuration assumption rather than an automatically versioned historical record; update `PRICING_HISTORY` and `PRICING_CHANGE_EVENTS` if an official effective timestamp is confirmed.
 
