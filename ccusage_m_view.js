@@ -45,6 +45,8 @@ const SESSION_TABLE_CAPS = {
 // Codex 2026-07-16：GPT-5.6 面向订阅用户按统一价格估算；其他含 Above 字段的模型维持既有规则。
 // reasoningOutputTokens 仅展示，不单独计费，因为价格口径为输入、缓存和输出。
 const PRICING_PER_M = {
+  // Codex 2026-10-29：GPT-6.1 Terra 按 Standard 短上下文及 30 分钟缓存写入价格估算。
+  'gpt-6.1-terra': { input: 1.0, cache: 0.05, cacheWrite: 1.25, output: 5.0 },
   // Codex 2026-09-30：GPT-6.1 Sol 缓存读取为输入价格的 5%，订阅估算继续使用统一价格。
   'gpt-6.1-sol': { input: 2.0, cache: 0.1, cacheWrite: 2.5, output: 10.0 },
   // Codex 2026-09-23：GPT-6 使用官方 Standard 短上下文价格；订阅估算维持统一价格。

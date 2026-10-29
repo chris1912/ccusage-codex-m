@@ -2,8 +2,16 @@
 
 - Project: ccusage-codex-m
 - Purpose: Rebuild Codex JSONL usage data and estimate token cost.
-- Last updated: 2026-10-10
+- Last updated: 2026-10-29
 - Updated by: Codex
+
+## 2026-10-29 GPT-6.1 Terra / GPT-6.1 Terra 价格
+
+Codex 2026-10-29：新增 `gpt-6.1-terra`，Standard 短上下文每百万 token 的输入、缓存读取、30 分钟缓存写入和输出价格分别为 `$1.00`、`$0.05`、`$1.25` 和 `$5.00`，沿用订阅估算统一价格规则。官方 12 小时缓存写入为 `$2.50`；当前脚本只有一种缓存写入计数及费率，无法区分该档，可能低估 12 小时缓存写入费用。
+
+Codex 2026-10-29: Added `gpt-6.1-terra` with Standard short-context rates per 1M tokens of `$1.00` input, `$0.05` cached read, `$1.25` 30-minute cache write, and `$5.00` output, following the existing uniform subscription estimate. The official 12-hour cache write costs `$2.50`; the script currently has only one cache-write count and rate and cannot distinguish that tier, so it may underestimate 12-hour cache-write costs.
+
+来源 / Source: https://developers.openai.com/api/docs/pricing
 
 ## 2026-10-10 Large Log Fix / 大日志读取修复
 
